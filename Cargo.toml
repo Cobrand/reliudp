@@ -1,0 +1,6 @@
+[package]
+name = "rudp-packet"
+version = "0.1.0"
+authors = ["Cobrand <cobrandw@gmail.com>"]
+
+[dependencies]
