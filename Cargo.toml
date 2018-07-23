@@ -1,6 +1,10 @@
 [package]
-name = "rudp-packet"
-version = "0.1.0"
 authors = ["Cobrand <cobrandw@gmail.com>"]
+name = "reliudp"
+version = "0.1.0-alpha"
 
 [dependencies]
+byteorder = "^1.2.3"
+crc = "^1.8.1"
+fnv = "^1.0.6"
+itertools = "^0.7.8"
