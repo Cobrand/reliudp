@@ -3,7 +3,6 @@ use std::collections::VecDeque;
 use itertools::Itertools;
 use ack::{Acks, Ack};
 use fragment::{Fragment, build_data_from_fragments};
-#[cfg(test)]
 use fragment::FragmentMeta;
 
 #[derive(Debug)]
@@ -21,6 +20,10 @@ pub (crate) struct FragmentSet<B: AsRef<[u8]> + 'static> {
     pub (crate) seq_id: u32,
 
     pub (crate) state: FragmentSetState<B>,
+
+    /// Whether or not we want to send Acks for this set.
+    pub (crate) fragment_meta: FragmentMeta,
+
     /// Id of the last iteration we sent an ack for this FragmentSet
     pub (crate) last_sent_ack_iteration: Option<u64>,
     /// Acks sent since last update. Resets whenver new fragments are received.
@@ -45,9 +48,10 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
         }
     }
     
-    pub (crate) fn with_capacity(seq_id: u32, frag_total: usize) -> FragmentSet<B> {
+    pub (crate) fn with_capacity(seq_id: u32, frag_total: usize, frag_meta: FragmentMeta) -> FragmentSet<B> {
         FragmentSet {
             seq_id,
+            fragment_meta: frag_meta, 
             state: FragmentSetState::Incomplete { fragments: HashMap::with_capacity_and_hasher(frag_total, Default::default()) },
             last_sent_ack_iteration: None,
             acks_sent_count: 0,
@@ -57,11 +61,13 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
     pub (crate) fn generate_ack(&self) -> Ack<Box<[u8]>> {
         match &self.state {
             FragmentSetState::Complete(_, frag_total) => {
+                // println!("Generating complete ack seq_id={:?}", self.seq_id);
                 Ack::create_complete(*frag_total)
             },
             FragmentSetState::Incomplete { fragments } => {
                 let frag_total = fragments.values().next().unwrap().frag_total;
                 let frag_ids_iter = fragments.keys().cloned();
+                // println!("Generating incomplete ack seq_id={:?} ({:?}/{:?})", self.seq_id, frag_ids_iter.size_hint().0, frag_total as usize + 1);
                 Ack::create_from_frag_ids(frag_ids_iter, frag_total)
             },
         }
@@ -75,6 +81,10 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
     pub (crate) fn reset_ack_sent_count(&mut self) {
         self.last_sent_ack_iteration = None;
         self.acks_sent_count = 0;
+    }
+
+    pub fn should_send_ack(&self) -> bool {
+        self.fragment_meta != FragmentMeta::Forgettable
     }
 
     pub (crate) fn is_incomplete(&self) -> bool {
@@ -139,13 +149,14 @@ impl<B: AsRef<[u8]> + 'static> FragmentCombiner<B> {
     pub fn push(&mut self, fragment: Fragment<B>, iteration_n: u64) {
         let seq_id = fragment.seq_id;
         let frag_total = fragment.frag_total;
+        let frag_meta = fragment.frag_meta;
 
         let try_transform = { 
             let entry = self.pending_fragments.entry(seq_id);
 
             // if the hashmap doesn't exist, create an empty one
             let fragment_set = entry.or_insert_with(|| {
-                FragmentSet::with_capacity(seq_id, frag_total as usize)
+                FragmentSet::with_capacity(seq_id, frag_total as usize, frag_meta)
             });
 
             if fragment_set.is_incomplete() {
@@ -183,7 +194,7 @@ impl<B: AsRef<[u8]> + 'static> FragmentCombiner<B> {
                 acks_to_remove.push(*seq_id);
                 continue;
             }
-            let should_send: bool = match fragment_set.last_sent_ack_iteration {
+            let should_send: bool = fragment_set.should_send_ack() && match fragment_set.last_sent_ack_iteration {
                 Some(last_iter) => {
                     debug_assert!(iteration_n > last_iter);
                     iteration_n - last_iter >= ::consts::ACK_SEND_INTERVAL

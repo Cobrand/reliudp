@@ -2,7 +2,7 @@ extern crate reliudp;
 use std::sync::Arc;
 
 fn generate_really_big_message(i: u8) -> Arc<[u8]> {
-    let really_big_message: Vec<u8> = (0..100000).map(|_v| i).collect();
+    let really_big_message: Vec<u8> = (0..2000).map(|_v| i).collect();
     let really_big_message: Arc<[u8]> = Arc::from(really_big_message.into_boxed_slice());
     really_big_message
 }
@@ -20,7 +20,11 @@ fn main() -> Result<(), Box<::std::error::Error>> {
         if i % 300 == 0 {
             let big_message = generate_really_big_message(n);
             println!("Sending (n={:?}) {:?} bytes to all {:?} remotes", n, big_message.as_ref().len(), server.remotes_len());
-            server.send_data(&big_message, reliudp::MessageType::KeyMessage);
+            if n % 2 == 0 {
+                server.send_data(&big_message, reliudp::MessageType::KeyMessage);
+            } else {
+                server.send_data(&big_message, reliudp::MessageType::Forgettable);
+            }
             n += 1;
         }
         
