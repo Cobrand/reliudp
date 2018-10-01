@@ -5,8 +5,13 @@ use ack::{Acks, Ack};
 use fragment::{Fragment, build_data_from_fragments};
 use fragment::FragmentMeta;
 
+pub (crate) trait FragmentDataRef: ::std::fmt::Debug + AsRef<[u8]> + 'static {}
+
+impl<D> FragmentDataRef for D where D: ::std::fmt::Debug + AsRef<[u8]> + 'static {
+}
+
 #[derive(Debug)]
-pub (crate) enum FragmentSetState<B: AsRef<[u8]> + 'static> {
+pub (crate) enum FragmentSetState<B: FragmentDataRef> {
     Incomplete {
         fragments: HashMap<u8, Fragment<B>>,
     },
@@ -16,7 +21,7 @@ pub (crate) enum FragmentSetState<B: AsRef<[u8]> + 'static> {
 
 /// Represents fragments for a given seq_id
 #[derive(Debug)]
-pub (crate) struct FragmentSet<B: AsRef<[u8]> + 'static> {
+pub (crate) struct FragmentSet<B: FragmentDataRef> {
     pub (crate) seq_id: u32,
 
     pub (crate) state: FragmentSetState<B>,
@@ -26,11 +31,14 @@ pub (crate) struct FragmentSet<B: AsRef<[u8]> + 'static> {
 
     /// Id of the last iteration we sent an ack for this FragmentSet
     pub (crate) last_sent_ack_iteration: Option<u64>,
+
+    pub (crate) last_received_iteration: u64,
+
     /// Acks sent since last update. Resets whenver new fragments are received.
     pub (crate) acks_sent_count: u32,
 }
 
-impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
+impl<B: FragmentDataRef> FragmentSet<B> {
     /// Panic is the state is ALREADY complete
     pub (crate) fn complete(&mut self, iteration_n: u64) -> HashMap<u8, Fragment<B>> {
         // frag_total is set to 0 at first, but is modified right after. It could e any number for all we care.
@@ -48,12 +56,13 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
         }
     }
     
-    pub (crate) fn with_capacity(seq_id: u32, frag_total: usize, frag_meta: FragmentMeta) -> FragmentSet<B> {
+    pub (crate) fn with_capacity(seq_id: u32, iteration_n: u64, frag_total: usize, frag_meta: FragmentMeta) -> FragmentSet<B> {
         FragmentSet {
             seq_id,
             fragment_meta: frag_meta, 
             state: FragmentSetState::Incomplete { fragments: HashMap::with_capacity_and_hasher(frag_total, Default::default()) },
             last_sent_ack_iteration: None,
+            last_received_iteration: iteration_n,
             acks_sent_count: 0,
         }
     }
@@ -83,10 +92,28 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
         self.acks_sent_count = 0;
     }
 
-    pub fn should_send_ack(&self) -> bool {
+    #[inline]
+    pub (crate) fn should_send_ack(&self) -> bool {
         self.fragment_meta != FragmentMeta::Forgettable
     }
 
+    /// Should the set be removed because no more data will arrive and we can't send ack
+    /// for it anymore
+    #[inline]
+    pub (crate) fn is_stale(&self, iteration_n: u64) -> bool {
+        if self.is_incomplete() {
+            match self.fragment_meta {
+                // half a second expiry
+                FragmentMeta::Forgettable => iteration_n >= self.last_received_iteration + 30,
+                // 50 seconds expiry for key messages
+                _ => iteration_n >= self.last_received_iteration + 3000,
+            }
+        } else {
+            self.fragment_meta == FragmentMeta::Forgettable || self.acks_sent_count >= 10
+        }
+    }
+
+    #[inline]
     pub (crate) fn is_incomplete(&self) -> bool {
         if let FragmentSetState::Incomplete { .. } = self.state {
             true
@@ -97,7 +124,7 @@ impl<B: AsRef<[u8]> + 'static> FragmentSet<B> {
 }
 
 #[derive(Debug)]
-pub struct FragmentCombiner<B: AsRef<[u8]> + 'static> {
+pub (crate) struct FragmentCombiner<B: FragmentDataRef> {
     // TODO: Against DOS attacks, we should make this a VecDeque of small size and get rid
     // of the old stuff automatically.
     pub (crate) pending_fragments: HashMap<u32, FragmentSet<B>>,
@@ -106,8 +133,8 @@ pub struct FragmentCombiner<B: AsRef<[u8]> + 'static> {
     pub (crate) out_messages: VecDeque<(u32, Box<[u8]>)>,
 }
 
-impl<B: AsRef<[u8]> + 'static> FragmentCombiner<B> {
-    pub fn new() -> Self {
+impl<B: FragmentDataRef> FragmentCombiner<B> {
+    pub (crate) fn new() -> Self {
         FragmentCombiner {
             pending_fragments: HashMap::default(),
             out_messages: VecDeque::new(),
@@ -156,9 +183,10 @@ impl<B: AsRef<[u8]> + 'static> FragmentCombiner<B> {
 
             // if the hashmap doesn't exist, create an empty one
             let fragment_set = entry.or_insert_with(|| {
-                FragmentSet::with_capacity(seq_id, frag_total as usize, frag_meta)
+                FragmentSet::with_capacity(seq_id, iteration_n, frag_total as usize, frag_meta)
             });
 
+            fragment_set.last_received_iteration = iteration_n;
             if fragment_set.is_incomplete() {
                 fragment_set.acks_sent_count = 0;
             }
@@ -190,7 +218,7 @@ impl<B: AsRef<[u8]> + 'static> FragmentCombiner<B> {
         let mut acks_to_send = Acks::new();
         let mut acks_to_remove: Vec<u32> = Vec::new();
         for (seq_id, mut fragment_set) in &mut self.pending_fragments {
-            if fragment_set.acks_sent_count >= 10 {
+            if fragment_set.is_stale(iteration_n) {
                 acks_to_remove.push(*seq_id);
                 continue;
             }
