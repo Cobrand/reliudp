@@ -229,6 +229,7 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
         }
     }
 
+    #[cfg(test)]
     pub fn new(b: B) -> UdpPacket<B>{
         UdpPacket {buffer: b}
     }

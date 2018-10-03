@@ -7,18 +7,19 @@ use udp_packet::UdpPacket;
 use std::collections::hash_map::Entry;
 use fnv::{FnvHashMap as HashMap};
 use rudp::MessageType;
+use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
-pub struct RudpServer {
+pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
 }
 
-impl RudpServer {
-    pub fn new<A: ToSocketAddrs>(local_addr: A) -> IoResult<RudpServer> {
+impl RUdpServer {
+    pub fn new<A: ToSocketAddrs>(local_addr: A) -> IoResult<RUdpServer> {
         let udp_socket = Arc::new(UdpSocket::bind(local_addr)?);
         udp_socket.set_nonblocking(true)?;
-        Ok(RudpServer {
+        Ok(RUdpServer {
             remotes: HashMap::default(),
             udp_socket,
         })
@@ -45,7 +46,7 @@ impl RudpServer {
         Ok(())
     }
 
-    pub fn process_all_incoming(&mut self) -> IoResult<()> {
+    pub (crate) fn process_all_incoming(&mut self) -> IoResult<()> {
         let mut done = false;
 
         while !done {
@@ -66,6 +67,7 @@ impl RudpServer {
         Ok(())
     }
 
+    /// Send some data to ALL remotes
     pub fn send_data(&mut self, data: &Arc<[u8]>, message_type: MessageType) {
         for mut socket in self.remotes.values_mut() {
             socket.send_data(Arc::clone(data), message_type);
@@ -77,6 +79,7 @@ impl RudpServer {
         self.remotes.len()
     }
 
+    /// Does internal processing for all remotes. Must be done before receiving events.
     pub fn next_tick(&mut self) -> IoResult<()> {
         self.remotes.retain(|_, v| {
             ! v.socket.status().is_finished()
@@ -91,9 +94,34 @@ impl RudpServer {
         Ok(())
     }
 
-    pub fn event_iter<'a>(&'a mut self) -> impl 'a + Iterator<Item=(SocketAddr, SocketEvent)> {
+    /// Get the socket stored for given the address
+    pub fn get(&self, socket_addr: SocketAddr) -> Option<&RUdpSocket> {
+        self.remotes.get(&socket_addr)
+    }
+    
+    /// Get the mutable socket stored for given the address
+    pub fn get_mut(&mut self, socket_addr: SocketAddr) -> Option<&mut RUdpSocket> {
+        self.remotes.get_mut(&socket_addr)
+    }
+
+    /// Returns an iterator that drain events for all remotes.
+    pub fn drain_events<'a>(&'a mut self) -> impl 'a + Iterator<Item=(SocketAddr, SocketEvent)> {
         self.remotes.iter_mut().flat_map(|(addr, socket)| {
             socket.drain_events().map(move |event| (*addr, event) )
         })
+    }
+}
+
+impl Index<SocketAddr> for RUdpServer {
+    type Output = RUdpSocket;
+
+    fn index<'a>(&'a self, index: SocketAddr) -> &'a RUdpSocket {
+        self.get(index).expect("socket_addr {} does not exist for this server instance")
+    }
+}
+
+impl IndexMut<SocketAddr> for RUdpServer {
+    fn index_mut<'a>(&'a mut self, index: SocketAddr) -> &'a mut RUdpSocket {
+        self.get_mut(index).expect("socket_addr {} does not exist for this server instance")
     }
 }

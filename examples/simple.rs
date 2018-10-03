@@ -6,7 +6,7 @@ fn main() -> Result<(), Box<::std::error::Error>> {
     let really_big_message: Vec<u8> = (0..65536).map(|v| (v % 256) as u8).collect();
     let really_big_message: Arc<[u8]> = Arc::from(really_big_message.into_boxed_slice());
 
-    let mut server = reliudp::RudpServer::new("0.0.0.0:50000").expect("Failed to create server");
+    let mut server = reliudp::RUdpServer::new("0.0.0.0:50000").expect("Failed to create server");
 
     let mut client = reliudp::RUdpSocket::connect("192.168.1.89:50000").expect("Failed to create client");
 
@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<::std::error::Error>> {
             println!("Client: Incoming event {:?}", client_event);
         }
 
-        for server_event in server.event_iter() {
+        for server_event in server.drain_events() {
             println!("Server: Incoming event {:?}", server_event);
         }
         

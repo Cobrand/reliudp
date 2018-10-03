@@ -152,8 +152,6 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
 
             let fragments = fragment_set.complete(iteration_n);
             if !fragments.values().map(|f| f.frag_total).all_equal() {
-                // some fragments don't have the same frag_total
-                // TODO: remove set, because it is corrupted
                 return Err(())
             }
             let message = build_data_from_fragments(fragments.into_iter().map(|(_k, v)| v))?;
@@ -209,8 +207,10 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
         };
 
         if try_transform {
-            let _r = self.transform_message(seq_id, iteration_n);
-            // failures to transform messages are ignored. Logging may be an option here TODO
+            if let Err(()) = self.transform_message(seq_id, iteration_n) {
+                // If we fail to transform a message (set is corrupted), we want to remove it.
+                self.pending_fragments.remove(&seq_id).expect("transform message failed because seq_id is corrupted, but seq_id is already removed. This is a bug.");
+            }
         }
     }
 

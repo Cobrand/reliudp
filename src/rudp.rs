@@ -8,11 +8,20 @@ use ack::Ack;
 use sent_data_tracker::SentDataTracker;
 use std::collections::VecDeque;
 
+/// Represents an event of the Socket.
+///
+/// They fall in mostly 2 categories: meta events, and data events.
+///
 pub enum SocketEvent {
+    /// Data sent by the remote, re-assembled
     Data(Box<[u8]>),
+    /// Represents when the handshake with the other side was done successfully
     Connected,
+    /// Connection was aborted unexpectedly by the other end (not the same as Timeout or Ended)
     Aborted,
+    /// Connection was ended peacefully by the other end
     Ended,
+    /// We haven't got any packet coming from the other for a certain amount of time
     Timeout,
 }
 
@@ -38,7 +47,7 @@ pub enum MessageType {
     /// A Key but expirable message.
     ///
     /// The parameter holds the number of
-    /// milliseconds this message expires after. If this parameter is 0,
+    /// frames this message expires after. If this parameter is 0,
     /// the behavior is the same as Forgettable.
     ///
     /// As long as this message is still valid, it will try to re-send
@@ -69,7 +78,7 @@ impl SocketStatus {
         self == SocketStatus::Connected
     }
 
-    pub fn event(self) -> Option<SocketEvent> {
+    pub (crate) fn event(self) -> Option<SocketEvent> {
         match self {
             SocketStatus::TimeoutError => Some(SocketEvent::Timeout),
             SocketStatus::TerminateSent => Some(SocketEvent::Ended),
@@ -109,7 +118,7 @@ pub struct RUdpSocket {
 }
 
 #[derive(Debug)]
-pub enum RUdpCreateError {
+pub (crate) enum RUdpCreateError {
     IoError(IoError),
     UnexpectedData,
 }
@@ -168,7 +177,11 @@ impl UdpSocketWrapper {
 impl RUdpSocket {
     /// Creates a Socket and connects to the remote instantly.
     ///
-    /// If you want to accept a new connection, use `new_incoming` instead.
+    /// The socket will be created with the status SynSent, after which there will be 2 outcomes:
+    ///
+    /// * The remote answered SynAck, and we set the status as "Connected"
+    /// * The remote did not answer, and we will get a timeout
+    // If you want to accept a new connection, use `new_incoming` instead.
     pub fn connect<A: ToSocketAddrs>(remote_addr: A) -> IoResult<RUdpSocket> {
         let remote_addr = remote_addr.to_socket_addrs()?.next().unwrap();
 
@@ -192,7 +205,7 @@ impl RUdpSocket {
         Ok(rudp_socket)
     }
 
-    pub fn new_incoming(udp_socket: Arc<UdpSocket>, incoming_packet: UdpPacket<Box<[u8]>>, incoming_address: SocketAddr) -> Result<RUdpSocket, RUdpCreateError> {
+    pub (crate) fn new_incoming(udp_socket: Arc<UdpSocket>, incoming_packet: UdpPacket<Box<[u8]>>, incoming_address: SocketAddr) -> Result<RUdpSocket, RUdpCreateError> {
         if let Ok(Packet::Syn) = incoming_packet.compute_packet() {
             let local_addr = udp_socket.local_addr()?;
             let mut rudp_socket = RUdpSocket {
@@ -216,6 +229,10 @@ impl RUdpSocket {
     }
 
     #[inline]
+    /// Drains socket events for this Socket.
+    ///
+    /// This is the only way to loop over all incoming events. See the examples
+    /// for how to use it.
     pub fn drain_events<'a>(&'a mut self) -> impl Iterator<Item=SocketEvent> + 'a {
         self.events.drain(..)
     }
@@ -230,6 +247,7 @@ impl RUdpSocket {
     }
     
     #[inline]
+    /// Send data to the remote.
     pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType) {
         self.sent_data_tracker.send_data(self.next_local_seq_id, Arc::from(data), self.iteration_n, message_type, &self.socket);
         self.next_local_seq_id += 1;
@@ -256,12 +274,18 @@ impl RUdpSocket {
         self.socket.send_udp_packet(&udp_packet)
     }
 
+    /// Same as `terminate`, but leave the Socket alive.
+    ///
+    /// This is mostly useful if you want to still receive the data the other remote is currently
+    /// sending at this time. However, note that no acks will be sent, so its usefulness
+    /// is still limited.
     pub fn send_end(&self) -> ::std::io::Result<()> {
         let p: Packet<Box<[u8]>> = Packet::End(self.next_local_seq_id.saturating_sub(1));
         let udp_packet = UdpPacket::from(&p);
         self.socket.send_udp_packet(&udp_packet)
     }
 
+    /// Terminates the socket, by sending a "Ended" event to the remote.
     pub fn terminate(self) -> IoResult<()> {
         self.send_end()
     }
@@ -330,9 +354,11 @@ impl RUdpSocket {
         Ok(())
     }
 
-    /// Receive packets from this single source
+    /// Internal processing for this single source
     ///
-    /// Do NOT use from the server, all packets not coming from the remote will be discarded!
+    /// Must be done before draining events. Even if there are no events,
+    /// you will want to re-send acks, keep track of sent data, etc. `next_tick` does that for you.
+    // Do NOT use from the server, all packets not coming from the remote will be discarded!
     pub fn next_tick(&mut self) -> IoResult<()> {
         self.incr_tick();
         let mut done = false;

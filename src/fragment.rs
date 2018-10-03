@@ -26,10 +26,6 @@ pub struct Fragment<T: AsRef<[u8]>> {
 }
 
 impl<T: AsRef<[u8]>> Fragment<T> {
-    pub fn new(seq_id: u32, frag_id: u8, frag_total: u8, frag_meta: FragmentMeta, data: T) -> Fragment<T> {
-        Fragment { seq_id, frag_id, frag_total, frag_meta, data }
-    }
-
     pub fn as_borrowed_frag<'a>(&'a self) -> Fragment<&'a T> {
         Fragment {
             seq_id: self.seq_id,
@@ -54,6 +50,7 @@ impl<'a> Clone for Fragment<&'a [u8]> {
 }
 
 impl<'a> Fragment<&'a [u8]> {
+    #[cfg(test)]
     pub fn into_boxed(self) -> Fragment<Box<[u8]>> {
         Fragment {
             seq_id: self.seq_id,

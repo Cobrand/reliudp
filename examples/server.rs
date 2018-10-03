@@ -8,12 +8,12 @@ fn generate_really_big_message(i: u8) -> Arc<[u8]> {
 }
 
 fn main() -> Result<(), Box<::std::error::Error>> {
-    let mut server = reliudp::RudpServer::new("0.0.0.0:61244").expect("Failed to create server");
+    let mut server = reliudp::RUdpServer::new("0.0.0.0:61244").expect("Failed to create server");
 
     let mut n = 0;
     for i in 0u64.. {
         server.next_tick()?;
-        for server_event in server.event_iter() {
+        for server_event in server.drain_events() {
             println!("Server: Incoming event {:?}", server_event);
         }
 
