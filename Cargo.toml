@@ -1,7 +1,14 @@
 [package]
 authors = ["Cobrand <cobrandw@gmail.com>"]
 name = "reliudp"
-version = "0.1.0-alpha"
+version = "0.1.0"
+
+description = "A custom Reliable UDP protocol for Rust"
+license = "MIT"
+
+keywords = ["udp", "networking", "multiplayer"]
+categories = ["network-programming"]
+repository = "https://github.com/Cobrand/reliudp"
 
 [dependencies]
 byteorder = "^1.2.3"
