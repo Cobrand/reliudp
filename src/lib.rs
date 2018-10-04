@@ -2,7 +2,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```no-run
 //! // server.rs
 //! extern crate reliudp;
 //! use std::sync::Arc;
@@ -40,7 +40,7 @@
 //! }
 //! ```
 //! 
-//! ```
+//! ```no-run
 //! // client.rs
 //! extern crate reliudp;
 //! use reliudp::SocketEvent;
