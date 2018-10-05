@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<::std::error::Error>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_micros(16666));
+        ::std::thread::sleep(::std::time::Duration::from_millis(5));
     }
     Ok(())
 }
