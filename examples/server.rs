@@ -17,7 +17,7 @@ fn main() -> Result<(), Box<::std::error::Error>> {
             println!("Server: Incoming event {:?}", server_event);
         }
 
-        if i % 300 == 0 {
+        if i % 300 == 0 && server.remotes_len() > 0 {
             let big_message = generate_really_big_message(n);
             println!("Sending (n={:?}) {:?} bytes to all {:?} remotes", n, big_message.as_ref().len(), server.remotes_len());
             if n % 2 == 0 {
@@ -26,9 +26,13 @@ fn main() -> Result<(), Box<::std::error::Error>> {
                 server.send_data(&big_message, reliudp::MessageType::Forgettable);
             }
             n += 1;
+
+            for (address, socket) in server.iter() {
+                println!("\tPing to remote {:?} is {:?}", address, socket.ping());
+            }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_micros(16666));
+        ::std::thread::sleep(::std::time::Duration::from_millis(5));
     }
     Ok(())
 }
