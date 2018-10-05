@@ -7,6 +7,7 @@ use std::sync::Arc;
 use ack::Ack;
 use sent_data_tracker::SentDataTracker;
 use std::collections::VecDeque;
+use ping_handler::*;
 
 /// Represents an event of the Socket.
 ///
@@ -60,6 +61,16 @@ pub enum MessageType {
     KeyMessage,
 }
 
+impl MessageType {
+    pub fn has_ack(self) -> bool {
+        use MessageType::{KeyExpirableMessage, KeyMessage};
+        match self {
+            KeyExpirableMessage(_) | KeyMessage => true,
+            _ => false
+        }
+    } 
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketStatus {
     SynSent,
@@ -109,6 +120,8 @@ pub struct RUdpSocket {
     pub (crate) packet_handler: UdpPacketHandler,
 
     pub (crate) events: VecDeque<SocketEvent>,
+
+    pub (crate) ping_handler: PingHandler,
 
     // pub (self) last_remote_seq_id: u32,
     pub (self) next_local_seq_id: u32,
@@ -196,6 +209,7 @@ impl RUdpSocket {
             packet_handler: UdpPacketHandler::new(),
             // last_remote_seq_id: 0,
             events: Default::default(),
+            ping_handler: PingHandler::new(),
             next_local_seq_id: 0,
             iteration_n: 0,
             last_answer: 0,
@@ -216,6 +230,7 @@ impl RUdpSocket {
                 // last_remote_seq_id: 0,
                 events: Default::default(),
                 next_local_seq_id: 0,
+                ping_handler: PingHandler::new(),
                 iteration_n: 0,
                 last_answer: 0,
             };
@@ -249,6 +264,9 @@ impl RUdpSocket {
     #[inline]
     /// Send data to the remote.
     pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType) {
+        if message_type.has_ack() {
+            self.ping_handler.ping(self.next_local_seq_id);
+        }
         self.sent_data_tracker.send_data(self.next_local_seq_id, Arc::from(data), self.iteration_n, message_type, &self.socket);
         self.next_local_seq_id += 1;
     }
@@ -311,6 +329,7 @@ impl RUdpSocket {
                     return Some(SocketEvent::Aborted)
                 },
                 Some(ReceivedMessage::Ack(seq_id, data)) => {
+                    self.ping_handler.pong(seq_id);
                     self.sent_data_tracker.receive_ack(seq_id, data, self.iteration_n, &self.socket);
                 },
                 Some(ReceivedMessage::Data(_id, data)) => {
@@ -333,6 +352,13 @@ impl RUdpSocket {
                 }
             };
         };
+    }
+
+    /// Returns the ping to the remote as ms
+    ///
+    /// Returns None if the ping has not been computed yet
+    pub fn ping(&self) -> Option<u32> {
+        self.ping_handler.current_ping_ms()
     }
 
     pub (crate) fn incr_tick(&mut self) {

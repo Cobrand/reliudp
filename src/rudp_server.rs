@@ -94,6 +94,14 @@ impl RUdpServer {
         Ok(())
     }
 
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item=(&'a SocketAddr, &'a RUdpSocket)> {
+        self.remotes.iter()
+    }
+
+    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item=(&'a SocketAddr, &'a mut RUdpSocket)> {
+        self.remotes.iter_mut()
+    }
+
     /// Get the socket stored for given the address
     pub fn get(&self, socket_addr: SocketAddr) -> Option<&RUdpSocket> {
         self.remotes.get(&socket_addr)
