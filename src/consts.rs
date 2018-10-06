@@ -13,12 +13,12 @@ pub (crate) const FRAG_DATA_START_BYTE: usize = PACKET_DATA_START_BYTE + FRAG_AD
 
 // 1024 + 128 = 1152 is an arbitrary value below most common MTU values
 // since the baseline is around 1400, 1280 for the "inner" message + udp message header of 10 bytes
-// We need to take ino account ipv4 headers (max of 60bytes) and udp headers (8 bytes)
+// We need to take into account ipv4 headers (max of 60bytes) and udp headers (8 bytes)
 // 1152 + 60 + 8 = 1220 is not too bad, because the "common" MTU for ipv6 is 1280.
 // Although we arguably could do better. Needs tweaking & testing if changed to a higher value.
 pub (crate) const MAX_UDP_MESSAGE_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYTE;
 
-// Since the max is 255, we can have at most 256 frags in a message.
+// Since the frag_id max is 255, we can have at most 256 frags in a message.
 pub (crate) const MAX_FRAGMENTS_IN_MESSAGE: usize = 256;
 
 /// Number of iterations we must wait to send the next ack since the last one.

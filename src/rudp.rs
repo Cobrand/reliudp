@@ -12,7 +12,6 @@ use ping_handler::*;
 /// Represents an event of the Socket.
 ///
 /// They fall in mostly 2 categories: meta events, and data events.
-///
 pub enum SocketEvent {
     /// Data sent by the remote, re-assembled
     Data(Box<[u8]>),
@@ -38,6 +37,7 @@ impl ::std::fmt::Debug for SocketEvent {
     }
 }
 
+/// Represents the type of message you are able to send (key, forgettable, ...)
 #[derive(Debug, Copy, Clone)]
 pub enum MessageType {
     /// Forgettable message type.
@@ -71,6 +71,8 @@ impl MessageType {
     } 
 }
 
+
+/// Represents the internal connection status of the Socket
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketStatus {
     SynSent,
@@ -108,6 +110,14 @@ impl SocketStatus {
     }
 }
 
+/// A RUdp Client Socket
+///
+/// Represents a connection between you (the host) and the remote. You
+/// can send messages, receive messages and poll it for various events.
+///
+/// Once dropped, the socket will send a "terminate" message to the remote before shutting down.
+///
+/// A `RUdpServer` holds 0, 1 or more of them.
 #[derive(Debug)]
 pub struct RUdpSocket {
     pub (crate) local_addr: SocketAddr,
@@ -189,6 +199,10 @@ impl UdpSocketWrapper {
 
 impl RUdpSocket {
     /// Creates a Socket and connects to the remote instantly.
+    ///
+    /// This will fail ONLY if there is something wrong with the network,
+    /// preventing it to create a UDP Socket. This is NOT blocking,
+    /// so any timeout event or things or the like will arrive as `SocketEvent`s.
     ///
     /// The socket will be created with the status SynSent, after which there will be 2 outcomes:
     ///
@@ -384,7 +398,11 @@ impl RUdpSocket {
     ///
     /// Must be done before draining events. Even if there are no events,
     /// you will want to re-send acks, keep track of sent data, etc. `next_tick` does that for you.
-    // Do NOT use from the server, all packets not coming from the remote will be discarded!
+    ///
+    /// Do NOT use this method if you have multiple remotes for a single UdpSocket (a single port):
+    /// all packets not coming from the right remote (matching IP and port) will be discarded!
+    /// This warning applies if this socket has been borrowed from a `RUdpServer` as well,
+    /// because all the remotes are sharing the same port.
     pub fn next_tick(&mut self) -> IoResult<()> {
         self.incr_tick();
         let mut done = false;

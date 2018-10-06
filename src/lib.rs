@@ -1,9 +1,10 @@
 //! Reliudp: A custom Reliable UDP protocol for Rust
 //!
-//! # Example
+//! # Examples
+//! 
+//! ## Server
 //!
-//! ```no-run
-//! // server.rs
+//! ```rust,no-run
 //! extern crate reliudp;
 //! use std::sync::Arc;
 //! 
@@ -34,14 +35,15 @@
 //!             n += 1;
 //!         }
 //!         
-//!         ::std::thread::sleep(::std::time::Duration::from_micros(16666));
+//!         ::std::thread::sleep(::std::time::Duration::from_millis(5));
 //!     }
 //!     Ok(())
 //! }
 //! ```
-//! 
-//! ```no-run
-//! // client.rs
+//!
+//! ## Client
+//!
+//! ```rust,no-run
 //! extern crate reliudp;
 //! use reliudp::SocketEvent;
 //! 
@@ -57,7 +59,7 @@
 //!             }
 //!         }
 //! 
-//!         ::std::thread::sleep(::std::time::Duration::from_micros(16666));
+//!         ::std::thread::sleep(::std::time::Duration::from_millis(5));
 //!     }
 //!     Ok(())
 //! }

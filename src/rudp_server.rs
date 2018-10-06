@@ -10,12 +10,25 @@ use rudp::MessageType;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
+/// A Server that holds multiple remotes
+///
+/// It handles incoming connections automatically, expired connections (timeouts),
+/// and obviously the ability to send/receive data and events to all remotes, either by handpicking
+/// or all at the same time.
+///
+/// The `get_mut` method allows you to get mutably a socket to send a specific remote some data.
+/// However, if you choose to not send everyone the same data, you **will** have to
+/// keep track of the socket addresses of the remotes in one way or another.
 pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
 }
 
 impl RUdpServer {
+    /// Tries to create a new server with the binding address.
+    ///
+    /// It's often a good idea to have a value like "0.0.0.0:YOUR_PORT",
+    /// to bind your address to the internet.
     pub fn new<A: ToSocketAddrs>(local_addr: A) -> IoResult<RUdpServer> {
         let udp_socket = Arc::new(UdpSocket::bind(local_addr)?);
         udp_socket.set_nonblocking(true)?;
@@ -44,6 +57,11 @@ impl RUdpServer {
             }
         };
         Ok(())
+    }
+
+    /// Returns a copy of the Arc holding the UdpSocket.
+    pub fn udp_socket(&self) -> Arc<UdpSocket> {
+        Arc::clone(&self.udp_socket)
     }
 
     pub (crate) fn process_all_incoming(&mut self) -> IoResult<()> {
@@ -100,6 +118,10 @@ impl RUdpServer {
 
     pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item=(&'a SocketAddr, &'a mut RUdpSocket)> {
         self.remotes.iter_mut()
+    }
+
+    pub fn addresses<'a>(&'a self) -> impl Iterator<Item=&'a SocketAddr> {
+        self.remotes.keys()
     }
 
     /// Get the socket stored for given the address
