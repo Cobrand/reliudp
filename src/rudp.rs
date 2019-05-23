@@ -95,7 +95,11 @@ impl SocketStatus {
         match self {
             SocketStatus::TimeoutError => Some(SocketEvent::Timeout),
             SocketStatus::TerminateSent => Some(SocketEvent::Ended),
-            SocketStatus::TerminateReceived => Some(SocketEvent::Ended),
+            // // this is actually commented to tell you that you should NOT uncomment this,
+            // // when we receive a packet, we automatically send the right event (ended or aborted)
+            // // so there is no need to have a similar event sent here as well
+            // SocketStatus::TerminateReceived => Some(SocketEvent::Ended),
+            SocketStatus::TerminateReceived => None,
             SocketStatus::Connected => Some(SocketEvent::Connected),
             _ => None
         }
