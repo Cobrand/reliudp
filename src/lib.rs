@@ -72,6 +72,8 @@ extern crate itertools;
 extern crate crc;
 extern crate byteorder;
 
+extern crate hex;
+
 /// TODO: reorganize stuff.
 /// Stuff is working, but it's really not well organized at all. A refactor will be needed
 /// (at least name-wise, but also to define precisely which module has which limits and which role)

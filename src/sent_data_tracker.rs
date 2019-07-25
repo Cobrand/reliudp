@@ -6,6 +6,8 @@ use ack::Ack;
 use rudp::MessageType;
 use misc::BoxedSlice;
 
+use hex::encode as hex_encode;
+
 #[derive(Debug, Clone, Copy)]
 pub (crate) enum PacketExpiration {
     Key,
@@ -36,7 +38,6 @@ impl PacketExpiration {
     }
 }
 
-#[derive(Debug)]
 pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     pub (self) data: D,
     pub (self) frag_total: u8,
@@ -44,6 +45,19 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     /// (iteration_n, ack_data)
     pub (self) last_received_ack: Option<(u64, Ack<BoxedSlice<u8>>)>,
     pub (self) last_sent_packet: u64,
+}
+
+impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        let data = hex_encode(&self.data);
+        write!(f, "SentDataSet {{ frag_total: {}, expiration_type: {:?}, last_received_ack: {:?}, last_sent_packet: {:?}, data: [hex {}] }}",
+            self.frag_total,
+            self.expiration_type,
+            self.last_received_ack,
+            self.last_sent_packet,
+            data
+        )
+    }
 }
 
 impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {

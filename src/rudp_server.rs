@@ -87,7 +87,7 @@ impl RUdpServer {
 
     /// Send some data to ALL remotes
     pub fn send_data(&mut self, data: &Arc<[u8]>, message_type: MessageType) {
-        for mut socket in self.remotes.values_mut() {
+        for socket in self.remotes.values_mut() {
             socket.send_data(Arc::clone(data), message_type);
         }
     }
@@ -102,11 +102,11 @@ impl RUdpServer {
         self.remotes.retain(|_, v| {
             ! v.socket.status().is_finished()
         });
-        for mut socket in self.remotes.values_mut() {
+        for socket in self.remotes.values_mut() {
             socket.incr_tick();
         }
         self.process_all_incoming()?;
-        for mut socket in self.remotes.values_mut() {
+        for socket in self.remotes.values_mut() {
             socket.inner_tick()?;
         }
         Ok(())

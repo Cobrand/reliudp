@@ -264,10 +264,16 @@ impl RUdpSocket {
     #[inline]
     /// Drains socket events for this Socket.
     ///
-    /// This is the only way to loop over all incoming events. See the examples
+    /// This is one of the 2 ways to loop over all incoming events. See the examples
     /// for how to use it.
     pub fn drain_events<'a>(&'a mut self) -> impl Iterator<Item=SocketEvent> + 'a {
         self.events.drain(..)
+    }
+
+    #[inline]
+    /// Gets the next socket event for this socket.
+    pub fn next_event(&mut self) -> Option<SocketEvent> {
+        self.events.pop_front()
     }
 
     #[inline]

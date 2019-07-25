@@ -14,6 +14,7 @@ fn ack_size_from_frag_total(frag_total: u8) -> usize {
     }
 }
 
+#[cfg(test)]
 pub (self) fn frag_ids_received_from_ack<I: Iterator<Item=u8>>(ack_bytes: I, frag_total: u8) -> impl Iterator<Item=u8> {
     ack_bytes.enumerate().flat_map(move |(index, bits): (usize, u8)| {
         (0..8).filter_map(move |bit_index| {
@@ -77,11 +78,13 @@ impl<D: AsRef<[u8]> + 'static> Ack<D> {
         Ack(data)
     }
 
+    #[cfg(test)]
     pub (crate) fn into_iter(self, frag_total: u8) -> impl Iterator<Item=u8> {
         let v = Vec::from(self.0.as_ref());
         frag_ids_received_from_ack(v.into_iter(), frag_total)
     }
 
+    #[cfg(test)]
     pub (crate) fn into_missing_iter(self, frag_total: u8) -> impl Iterator<Item=u8> {
         let v = Vec::from(self.0.as_ref());
         frag_ids_missing_from_ack(v.into_iter(), frag_total)

@@ -217,7 +217,7 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
     pub (crate) fn tick(&mut self, iteration_n: u64) -> Acks<Box<[u8]>> {
         let mut acks_to_send = Acks::new();
         let mut acks_to_remove: Vec<u32> = Vec::new();
-        for (seq_id, mut fragment_set) in &mut self.pending_fragments {
+        for (seq_id, fragment_set) in &mut self.pending_fragments {
             if fragment_set.is_stale(iteration_n) {
                 acks_to_remove.push(*seq_id);
                 continue;
