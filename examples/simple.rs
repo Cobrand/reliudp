@@ -2,7 +2,7 @@ extern crate reliudp;
 
 use std::sync::Arc;
 
-fn main() -> Result<(), Box<::std::error::Error>> {
+fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
     let really_big_message: Vec<u8> = (0..65536).map(|v| (v % 256) as u8).collect();
     let really_big_message: Arc<[u8]> = Arc::from(really_big_message.into_boxed_slice());
 

@@ -1,7 +1,7 @@
 extern crate reliudp;
 use reliudp::SocketEvent;
 
-fn main() -> Result<(), Box<::std::error::Error>> {
+fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
     let mut client = reliudp::RUdpSocket::connect("127.0.0.1:61244").expect("Failed to create client");
     for i in 0.. {
         client.next_tick()?;

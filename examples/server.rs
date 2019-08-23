@@ -7,7 +7,7 @@ fn generate_really_big_message(i: u8) -> Arc<[u8]> {
     really_big_message
 }
 
-fn main() -> Result<(), Box<::std::error::Error>> {
+fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
     let mut server = reliudp::RUdpServer::new("0.0.0.0:61244").expect("Failed to create server");
 
     let mut n = 0;

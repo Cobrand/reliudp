@@ -440,6 +440,7 @@ impl RUdpSocket {
         Ok(())
     }
 
+    #[inline]
     pub fn status(&self) -> SocketStatus {
         self.socket.status
     }
@@ -447,6 +448,10 @@ impl RUdpSocket {
     #[inline]
     pub fn local_addr(&self) -> SocketAddr {
         self.local_addr
+    }
+
+    pub fn remote_addr(&self) -> SocketAddr {
+        self.socket.remote_addr
     }
 }
 
