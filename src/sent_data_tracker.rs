@@ -50,7 +50,7 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
 impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         let data = hex_encode(&self.data);
-        write!(f, "SentDataSet {{ frag_total: {}, expiration_type: {:?}, last_received_ack: {:?}, last_sent_packet: {:?}, data: [hex {}] }}",
+        write!(f, "SentDataSet {{ frag_total: {}, expiration_type: {:?}, last_received_ack: {:?}, last_sent_packet: {:?}, data: [hex 0x{}] }}",
             self.frag_total,
             self.expiration_type,
             self.last_received_ack,

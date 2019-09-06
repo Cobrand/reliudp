@@ -32,7 +32,7 @@ impl<'a, I: Iterator<Item = &'a [u8]> + Clone> Iterator for FragmentGenerator<'a
                 frag_total: self.frag_total,
                 frag_id: current_frag,
                 frag_meta: self.frag_meta,
-                data: data,
+                data,
             }
         })
     }

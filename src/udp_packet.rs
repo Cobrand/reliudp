@@ -174,9 +174,15 @@ impl PacketMeta {
 ///
 /// The receiver will send 1 of these packets per iteration at *most*, unless the packet is totally received (all 1s to send),
 /// then the packet is sent once per iteration, for 10 iterations (to make sure the ack goes through).
-#[derive(Debug)]
 pub struct UdpPacket<B: AsRef<[u8]>> {
    pub (crate) buffer: B
+}
+
+impl<B: AsRef<[u8]>> ::std::fmt::Debug for UdpPacket<B> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        let data = hex::encode(&self.buffer);
+        write!(f, "UdpPacket [hex 0x{}]", data)
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]

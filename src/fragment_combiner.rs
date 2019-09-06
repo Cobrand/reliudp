@@ -198,7 +198,7 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
                 // This can only happen when a packet "lied" about its frag_total.
                 // If we try to re-build the message here, we will get an error because all of the fragments
                 // don't have the same frag_total, but we still return true to "clear" the queue.
-                fragments.len() >= frag_total as usize + 1
+                fragments.len() > frag_total as usize
             } else {
                 // We are trying to push a dragment to something that is already complete.
                 // So let's do nothing instead.

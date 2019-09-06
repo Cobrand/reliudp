@@ -142,6 +142,10 @@ pub struct RUdpSocket {
 
     pub (self) iteration_n: u64,
     pub (self) last_answer: u64,
+
+    /// number of iterations required before the socket is set as timeout. Default is 600, but it's heavily
+    /// recommended to change this value to your needs.
+    pub (self) timeout_delay: u64,
 }
 
 #[derive(Debug)]
@@ -231,6 +235,7 @@ impl RUdpSocket {
             next_local_seq_id: 0,
             iteration_n: 0,
             last_answer: 0,
+            timeout_delay: 600,
         };
         rudp_socket.send_syn()?;
 
@@ -251,6 +256,7 @@ impl RUdpSocket {
                 ping_handler: PingHandler::new(),
                 iteration_n: 0,
                 last_answer: 0,
+                timeout_delay: 600,
             };
             rudp_socket.send_synack()?;
 
@@ -259,6 +265,19 @@ impl RUdpSocket {
             // reject everything that is not a Syn packet.
             Err(RUdpCreateError::UnexpectedData)
         }
+    }
+
+    /// Set the number of iterations required before a remote is set as "dead".
+    /// 
+    /// For instance, if your tick is every 50ms, and your timeout_delay is of 24,
+    /// then roughly 50*24=1200ms (=1.2s) without a message from the remote will cause a timeout error.
+    pub fn set_timeout_delay(&mut self, timeout_delay: u64) {
+        self.timeout_delay = timeout_delay;
+    }
+
+    pub fn set_timeout_delay_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
+        assert!(tick_interval_milliseconds > 0);
+        self.timeout_delay = milliseconds / tick_interval_milliseconds;
     }
 
     #[inline]
@@ -291,7 +310,7 @@ impl RUdpSocket {
         if message_type.has_ack() {
             self.ping_handler.ping(self.next_local_seq_id);
         }
-        self.sent_data_tracker.send_data(self.next_local_seq_id, Arc::from(data), self.iteration_n, message_type, &self.socket);
+        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.iteration_n, message_type, &self.socket);
         self.next_local_seq_id += 1;
     }
 
@@ -340,12 +359,16 @@ impl RUdpSocket {
 
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>) {
         self.last_answer = self.iteration_n;
+        log::trace!("received packet {:?} from remote {:?} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
         self.packet_handler.add_received_packet(udp_packet, self.iteration_n);
     }
 
     fn next_packet_event(&mut self) -> Option<SocketEvent> {
         loop {
             let r = self.packet_handler.next_received_message();
+            if r.is_some() {
+                log::debug!("received message {:?} from remote {:?} at n={}", r, self.socket.remote_addr, self.iteration_n);
+            }
             match r {
                 None => return None,
                 Some(ReceivedMessage::Abort(_id)) => {
@@ -394,7 +417,8 @@ impl RUdpSocket {
         while let Some(socket_event) = self.next_packet_event() {
             self.events.push_back(socket_event);
         }
-        if self.iteration_n >= self.last_answer + 60 * 10 && !self.socket.status().is_finished() {
+        if self.iteration_n >= self.last_answer + self.timeout_delay && !self.socket.status().is_finished() {
+            log::warn!("rudp socket timeout-ed: last_answer={}, iteration_n={}", self.iteration_n, self.last_answer);
             self.set_status(SocketStatus::TimeoutError);
         }
         for (seq_id, ack) in acks_to_send {
@@ -430,7 +454,7 @@ impl RUdpSocket {
                     match err.kind() {
                         IoErrorKind::WouldBlock => { done = true },
                         err_kind => {
-                            panic!("SingleSocket: Received other unexpected net error {:?}", err_kind)
+                            log::error!("SingleSocket: Received other unexpected net error {:?}", err_kind)
                         }
                     }
                 },

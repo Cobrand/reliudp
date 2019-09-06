@@ -22,6 +22,7 @@ use std::ops::{Index, IndexMut};
 pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
+    pub (self) timeout_delay: Option<u64>,
 }
 
 impl RUdpServer {
@@ -35,7 +36,31 @@ impl RUdpServer {
         Ok(RUdpServer {
             remotes: HashMap::default(),
             udp_socket,
+            timeout_delay: None,
         })
+    }
+
+    fn update_timeout_delay_for_remotes(&mut self) {
+        if let Some(delay) = self.timeout_delay {
+            for socket in self.remotes.values_mut() {
+                socket.set_timeout_delay(delay);
+            }
+        }
+    }
+
+    /// Set the number of iterations required before a remote is set as "dead" for all past and all new remotes.
+    /// 
+    /// For instance, if your tick is every 50ms, and your timeout_delay is of 24,
+    /// then roughly 50*24=1200ms (=1.2s) without a message from the remote will cause a timeout error.
+    pub fn set_timeout_delay(&mut self, timeout_delay: u64) {
+        self.timeout_delay = Some(timeout_delay);
+        self.update_timeout_delay_for_remotes();
+    }
+
+    pub fn set_timeout_delay_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
+        assert!(tick_interval_milliseconds > 0);
+        self.timeout_delay = Some(milliseconds / tick_interval_milliseconds);
+        self.update_timeout_delay_for_remotes();
     }
 
     fn process_one_incoming(&mut self, udp_packet: UdpPacket<Box<[u8]>>, remote_addr: SocketAddr) -> IoResult<()> {
@@ -50,7 +75,10 @@ impl RUdpServer {
                     Err(RUdpCreateError::UnexpectedData) => {
                         /* ignore unexpected data */
                     },
-                    Ok(rudp_socket) => {
+                    Ok(mut rudp_socket) => {
+                        if let Some(delay) = self.timeout_delay {
+                            rudp_socket.set_timeout_delay(delay)
+                        }
                         vacant.insert(rudp_socket);
                     },
                 };
@@ -112,15 +140,15 @@ impl RUdpServer {
         Ok(())
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item=(&'a SocketAddr, &'a RUdpSocket)> {
+    pub fn iter(&self) -> impl Iterator<Item=(&SocketAddr, &RUdpSocket)> {
         self.remotes.iter()
     }
 
-    pub fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item=(&'a SocketAddr, &'a mut RUdpSocket)> {
+    pub fn iter_mut(&mut self) -> impl Iterator<Item=(&SocketAddr, &mut RUdpSocket)> {
         self.remotes.iter_mut()
     }
 
-    pub fn addresses<'a>(&'a self) -> impl Iterator<Item=&'a SocketAddr> {
+    pub fn addresses(&self) -> impl Iterator<Item=&SocketAddr> {
         self.remotes.keys()
     }
 
