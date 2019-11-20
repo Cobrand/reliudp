@@ -424,7 +424,7 @@ impl RUdpSocket {
             self.events.push_back(socket_event);
         }
         if self.iteration_n >= self.last_answer + self.timeout_delay && !self.socket.status().is_finished() {
-            log::warn!("socket {} timeout-ed: last_answer={}, iteration_n={}", self.remote_addr(), self.last_answer, self.iteration_n);
+            log::warn!("socket {} timed out: last_answer={}, iteration_n={}", self.remote_addr(), self.last_answer, self.iteration_n);
             self.set_status(SocketStatus::TimeoutError);
         }
         for (seq_id, ack) in acks_to_send {
