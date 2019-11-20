@@ -237,6 +237,7 @@ impl RUdpSocket {
             last_answer: 0,
             timeout_delay: 600,
         };
+        log::info!("trying to connect to remote {}...", rudp_socket.remote_addr());
         rudp_socket.send_syn()?;
 
         Ok(rudp_socket)
@@ -259,6 +260,7 @@ impl RUdpSocket {
                 timeout_delay: 600,
             };
             rudp_socket.send_synack()?;
+            log::info!("received incoming connection from {}", rudp_socket.remote_addr());
 
             Ok(rudp_socket)
         } else {
@@ -297,7 +299,7 @@ impl RUdpSocket {
 
     #[inline]
     pub (self) fn set_status(&mut self, status: SocketStatus) {
-        log::info!("socket {}: new status {:?}", self.remote_addr(), status);
+        log::debug!("socket {}: new status {:?}", self.remote_addr(), status);
         self.socket.set_status(status);
         if let Some(event) = status.event() {
             // We should notify this event
@@ -317,7 +319,6 @@ impl RUdpSocket {
 
     /// Should only be used by connect
     fn send_syn(&self) -> ::std::io::Result<()> {
-        log::info!("trying to connect to remote {:?}...", self.remote_addr());
         let p: Packet<Box<[u8]>> = Packet::Syn;
         let udp_packet = UdpPacket::from(&p);
         self.socket.send_udp_packet(&udp_packet)
@@ -361,7 +362,7 @@ impl RUdpSocket {
 
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>) {
         self.last_answer = self.iteration_n;
-        log::trace!("received packet {:?} from remote {:?} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
+        log::trace!("received packet {:?} from remote {} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
         self.packet_handler.add_received_packet(udp_packet, self.iteration_n);
     }
 
@@ -369,7 +370,7 @@ impl RUdpSocket {
         loop {
             let r = self.packet_handler.next_received_message();
             if r.is_some() {
-                log::debug!("received message {:?} from remote {:?} at n={}", r, self.socket.remote_addr, self.iteration_n);
+                log::debug!("received message {:?} from remote {} at n={}", r, self.socket.remote_addr, self.iteration_n);
             }
             match r {
                 None => return None,
@@ -390,12 +391,15 @@ impl RUdpSocket {
                 },
                 Some(ReceivedMessage::SynAck) => {
                     if let SocketStatus::SynSent = self.socket.status() {
+                        log::info!("connected to remote {}", self.remote_addr());
                         self.set_status(SocketStatus::Connected);
                     } else {
+                        log::warn!("received synack while the status isn't synsent for {}", self.remote_addr());
                         /* received synack when the status isn't even SynSent? Mmmh... */
                     }
                 },
                 Some(ReceivedMessage::Syn) => {
+                    log::warn!("received a syn message while already connected {}", self.remote_addr());
                     /* do nothing for now, but we may want to handle "syn" later to
                     have a 'reconnect' feature or something? */
                 }
@@ -420,7 +424,7 @@ impl RUdpSocket {
             self.events.push_back(socket_event);
         }
         if self.iteration_n >= self.last_answer + self.timeout_delay && !self.socket.status().is_finished() {
-            log::warn!("rudp socket timeout-ed: last_answer={}, iteration_n={}", self.last_answer, self.iteration_n);
+            log::warn!("socket {} timeout-ed: last_answer={}, iteration_n={}", self.remote_addr(), self.last_answer, self.iteration_n);
             self.set_status(SocketStatus::TimeoutError);
         }
         for (seq_id, ack) in acks_to_send {
