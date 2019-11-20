@@ -297,6 +297,7 @@ impl RUdpSocket {
 
     #[inline]
     pub (self) fn set_status(&mut self, status: SocketStatus) {
+        log::info!("socket {}: new status {:?}", self.remote_addr(), status);
         self.socket.set_status(status);
         if let Some(event) = status.event() {
             // We should notify this event
@@ -316,6 +317,7 @@ impl RUdpSocket {
 
     /// Should only be used by connect
     fn send_syn(&self) -> ::std::io::Result<()> {
+        log::info!("trying to connect to remote {:?}...", self.remote_addr());
         let p: Packet<Box<[u8]>> = Packet::Syn;
         let udp_packet = UdpPacket::from(&p);
         self.socket.send_udp_packet(&udp_packet)
@@ -418,7 +420,7 @@ impl RUdpSocket {
             self.events.push_back(socket_event);
         }
         if self.iteration_n >= self.last_answer + self.timeout_delay && !self.socket.status().is_finished() {
-            log::warn!("rudp socket timeout-ed: last_answer={}, iteration_n={}", self.iteration_n, self.last_answer);
+            log::warn!("rudp socket timeout-ed: last_answer={}, iteration_n={}", self.last_answer, self.iteration_n);
             self.set_status(SocketStatus::TimeoutError);
         }
         for (seq_id, ack) in acks_to_send {
