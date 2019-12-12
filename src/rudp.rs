@@ -147,6 +147,9 @@ pub struct RUdpSocket {
     /// number of iterations required before the socket is set as timeout. Default is 600, but it's heavily
     /// recommended to change this value to your needs.
     pub (self) timeout_delay: u64,
+
+    /// number of iterations required before we send a sample "heartbeat" message to avoid timeouts.
+    pub (self) heartbeat_delay: u64,
 }
 
 #[derive(Debug)]
@@ -238,6 +241,7 @@ impl RUdpSocket {
             last_received_message: 0,
             last_sent_message: 0,
             timeout_delay: 600,
+            heartbeat_delay: 20,
         };
         log::info!("trying to connect to remote {}...", rudp_socket.remote_addr());
         rudp_socket.send_syn()?;
@@ -261,6 +265,7 @@ impl RUdpSocket {
                 last_received_message: 0,
                 last_sent_message: 0,
                 timeout_delay: 600,
+                heartbeat_delay: 20,
             };
             rudp_socket.send_synack()?;
             log::info!("received incoming connection from {}", rudp_socket.remote_addr());
@@ -283,6 +288,17 @@ impl RUdpSocket {
     pub fn set_timeout_delay_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
         assert!(tick_interval_milliseconds > 0);
         self.timeout_delay = milliseconds / tick_interval_milliseconds;
+    }
+
+    /// Set the number of iterations required before we send a "heartbeat" message to the remote,
+    /// to make sure they don't consider us as timed out.
+    pub fn set_heartbeat_delay(&mut self, heartbeat_delay: u64) {
+        self.heartbeat_delay = heartbeat_delay;
+    }
+
+    pub fn set_heartbeat_delay_with(&mut self, milliseconds: u64, heartbeat_interval_milliseconds: u64) {
+        assert!(heartbeat_interval_milliseconds > 0);
+        self.heartbeat_delay = milliseconds / heartbeat_interval_milliseconds;
     }
 
     #[inline]
@@ -445,7 +461,7 @@ impl RUdpSocket {
         for (seq_id, ack) in acks_to_send {
             self.send_ack(seq_id, ack)?;
         }
-        if self.iteration_n.saturating_sub(self.last_received_message) >= 20 {
+        if self.iteration_n.saturating_sub(self.last_sent_message) > self.heartbeat_delay {
             self.send_heartbeat()?;
         }
         self.sent_data_tracker.next_tick(self.iteration_n, &self.socket);
