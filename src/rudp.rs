@@ -141,7 +141,8 @@ pub struct RUdpSocket {
     pub (self) next_local_seq_id: u32,
 
     pub (self) iteration_n: u64,
-    pub (self) last_answer: u64,
+    pub (self) last_received_message: u64,
+    pub (self) last_sent_message: u64,
 
     /// number of iterations required before the socket is set as timeout. Default is 600, but it's heavily
     /// recommended to change this value to your needs.
@@ -224,7 +225,7 @@ impl RUdpSocket {
         udp_socket.set_nonblocking(true)?;
         let local_addr = udp_socket.local_addr()?;
 
-        let rudp_socket = RUdpSocket {
+        let mut rudp_socket = RUdpSocket {
             socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynSent, remote_addr),
             local_addr,
             sent_data_tracker: SentDataTracker::new(),
@@ -234,7 +235,8 @@ impl RUdpSocket {
             ping_handler: PingHandler::new(),
             next_local_seq_id: 0,
             iteration_n: 0,
-            last_answer: 0,
+            last_received_message: 0,
+            last_sent_message: 0,
             timeout_delay: 600,
         };
         log::info!("trying to connect to remote {}...", rudp_socket.remote_addr());
@@ -256,7 +258,8 @@ impl RUdpSocket {
                 next_local_seq_id: 0,
                 ping_handler: PingHandler::new(),
                 iteration_n: 0,
-                last_answer: 0,
+                last_received_message: 0,
+                last_sent_message: 0,
                 timeout_delay: 600,
             };
             rudp_socket.send_synack()?;
@@ -317,11 +320,16 @@ impl RUdpSocket {
         self.next_local_seq_id += 1;
     }
 
+    fn send_udp_packet<P: AsRef<[u8]>>(&mut self, udp_packet: &UdpPacket<P>) -> std::io::Result<()> {
+        self.last_sent_message = self.iteration_n;
+        self.socket.send_udp_packet(&udp_packet)
+    }
+
     /// Should only be used by connect
-    fn send_syn(&self) -> ::std::io::Result<()> {
+    fn send_syn(&mut self) -> ::std::io::Result<()> {
         let p: Packet<Box<[u8]>> = Packet::Syn;
         let udp_packet = UdpPacket::from(&p);
-        self.socket.send_udp_packet(&udp_packet)
+        self.send_udp_packet(&udp_packet)
     }
 
     /// Should only be used by new_incoming
@@ -329,13 +337,13 @@ impl RUdpSocket {
         let p: Packet<Box<[u8]>> = Packet::SynAck;
         let udp_packet = UdpPacket::from(&p);
         self.set_status(SocketStatus::Connected);
-        self.socket.send_udp_packet(&udp_packet)
+        self.send_udp_packet(&udp_packet)
     }
 
-    pub (self) fn send_ack<D: AsRef<[u8]> + 'static>(&self, seq_id: u32, ack: Ack<D>) -> ::std::io::Result<()> {
+    pub (self) fn send_ack<D: AsRef<[u8]> + 'static>(&mut self, seq_id: u32, ack: Ack<D>) -> ::std::io::Result<()> {
         let p: Packet<D> = Packet::Ack(seq_id, ack.into_inner());
         let udp_packet = UdpPacket::from(&p);
-        self.socket.send_udp_packet(&udp_packet)
+        self.send_udp_packet(&udp_packet)
     }
 
     /// Same as `terminate`, but leave the Socket alive.
@@ -343,25 +351,31 @@ impl RUdpSocket {
     /// This is mostly useful if you want to still receive the data the other remote is currently
     /// sending at this time. However, note that no acks will be sent, so its usefulness
     /// is still limited.
-    pub fn send_end(&self) -> ::std::io::Result<()> {
+    pub fn send_end(&mut self) -> ::std::io::Result<()> {
         let p: Packet<Box<[u8]>> = Packet::End(self.next_local_seq_id.saturating_sub(1));
         let udp_packet = UdpPacket::from(&p);
-        self.socket.send_udp_packet(&udp_packet)
+        self.send_udp_packet(&udp_packet)
     }
 
     /// Terminates the socket, by sending a "Ended" event to the remote.
-    pub fn terminate(self) -> IoResult<()> {
+    pub fn terminate(mut self) -> IoResult<()> {
         self.send_end()
     }
 
-    pub (self) fn send_abort(&self) -> ::std::io::Result<()> {
+    fn send_heartbeat(&mut self) -> ::std::io::Result<()> {
+        let p: Packet<Box<[u8]>> = Packet::Heartbeat;
+        let udp_packet = UdpPacket::from(&p);
+        self.send_udp_packet(&udp_packet)
+    }
+
+    pub (self) fn send_abort(&mut self) -> ::std::io::Result<()> {
         let p: Packet<Box<[u8]>> = Packet::Abort(self.next_local_seq_id.saturating_sub(1));
         let udp_packet = UdpPacket::from(&p);
-        self.socket.send_udp_packet(&udp_packet)
+        self.send_udp_packet(&udp_packet)
     }
 
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>) {
-        self.last_answer = self.iteration_n;
+        self.last_received_message = self.iteration_n;
         log::trace!("received packet {:?} from remote {} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
         self.packet_handler.add_received_packet(udp_packet, self.iteration_n);
     }
@@ -389,6 +403,7 @@ impl RUdpSocket {
                     self.set_status(SocketStatus::TerminateReceived);
                     return Some(SocketEvent::Ended)
                 },
+                Some(ReceivedMessage::Heartbeat) => {},
                 Some(ReceivedMessage::SynAck) => {
                     if let SocketStatus::SynSent = self.socket.status() {
                         log::info!("connected to remote {}", self.remote_addr());
@@ -423,12 +438,15 @@ impl RUdpSocket {
         while let Some(socket_event) = self.next_packet_event() {
             self.events.push_back(socket_event);
         }
-        if self.iteration_n >= self.last_answer + self.timeout_delay && !self.socket.status().is_finished() {
-            log::warn!("socket {} timed out: last_answer={}, iteration_n={}", self.remote_addr(), self.last_answer, self.iteration_n);
+        if self.iteration_n >= self.last_received_message + self.timeout_delay && !self.socket.status().is_finished() {
+            log::warn!("socket {} timed out: last_received_message={}, iteration_n={}", self.remote_addr(), self.last_received_message, self.iteration_n);
             self.set_status(SocketStatus::TimeoutError);
         }
         for (seq_id, ack) in acks_to_send {
             self.send_ack(seq_id, ack)?;
+        }
+        if self.iteration_n.saturating_sub(self.last_received_message) >= 20 {
+            self.send_heartbeat()?;
         }
         self.sent_data_tracker.next_tick(self.iteration_n, &self.socket);
         Ok(())

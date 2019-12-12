@@ -169,6 +169,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
     }
 
+    /// Clears data that is too old to be stored here (acks missing a part taht are too old, ...)
     pub fn next_tick(&mut self, iteration_n: u64, socket: &UdpSocketWrapper) {
         let mut entries_to_remove: Vec<_> = vec!();
         for (seq_id, ref mut set) in &mut self.sets {

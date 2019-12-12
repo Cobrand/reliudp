@@ -10,6 +10,7 @@ pub (crate) enum ReceivedMessage {
     Data(u32, Box<[u8]>),
     Syn,
     SynAck,
+    Heartbeat,
     End(u32),
     Abort(u32),
 }
@@ -39,6 +40,9 @@ impl UdpPacketHandler {
             },
             Ok(Packet::Ack(seq_id, data)) => {
                 self.out_messages.push_back(ReceivedMessage::Ack(seq_id, data));
+            },
+            Ok(Packet::Heartbeat) => {
+                self.out_messages.push_back(ReceivedMessage::Heartbeat);
             },
             Ok(Packet::Syn) => {
                 self.out_messages.push_back(ReceivedMessage::Syn);

@@ -11,6 +11,7 @@ pub (crate) enum Packet<P: AsRef<[u8]>> {
     Ack(u32, P),
     Syn,
     SynAck,
+    Heartbeat,
     End(u32),
     Abort(u32)
 }
@@ -34,6 +35,7 @@ impl<P: AsRef<[u8]>> Packet<P> {
             Packet::SynAck => (0, 255, 2),
             Packet::End(last_seq_id) => (last_seq_id, 255, 3),
             Packet::Abort(last_seq_id) => (last_seq_id, 255, 4),
+            Packet::Heartbeat => (0, 255, 5),
         }
     }
 
@@ -64,6 +66,7 @@ impl<P: AsRef<[u8]>> Packet<P> {
             (SynAck, SynAck) => true,
             (End(s1), End(s2)) => s1 == s2,
             (Abort(s1), Abort(s2)) => s1 == s2,
+            (Heartbeat, Heartbeat) => true,
             _ => false,
         }
     }
@@ -78,6 +81,7 @@ pub enum PacketMeta {
     Ack(u32),
     Syn,
     SynAck,
+    Heartbeat,
     End(u32),
     Abort(u32),
 }
@@ -95,6 +99,7 @@ impl PacketMeta {
                 Packet::Ack(seq_id, data),
             PacketMeta::Syn => Packet::Syn,
             PacketMeta::SynAck => Packet::SynAck,
+            PacketMeta::Heartbeat => Packet::Heartbeat,
             PacketMeta::End(last_seq_id) => Packet::End(last_seq_id),
             PacketMeta::Abort(last_seq_id) => Packet::Abort(last_seq_id),
         }
@@ -134,6 +139,8 @@ impl PacketMeta {
 /// and the connection is immediatly closed.
 /// * If Frag ID == 255, Frag Total == 4: type = Abort: Other program has been terminated
 /// unexpectedly and will not receive nor send packets anymore.
+/// * If Frag ID == 255, Frag Total == 5: type = Heartbeat: Message sent every few iterations
+/// to make sure the remote does not disconnect unexpectedly.
 /// * Other uses for Frag ID == 255 and Frag Total != 255 are reserved for other packets like these.
 ///
 /// # Fragment
@@ -278,6 +285,7 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
             (255, 2) => Ok(PacketMeta::SynAck),
             (255, 3) => Ok(PacketMeta::End(seq_id)),
             (255, 4) => Ok(PacketMeta::Abort(seq_id)),
+            (255, 5) => Ok(PacketMeta::Heartbeat),
 
             // since frag_total is really +1, if frag_id == frag_total, it's actually the last fragment
             // that we received. if frag_id = frag_total = 0, the first and last fragment of a message was received.
@@ -402,15 +410,18 @@ fn udp_ser_de_syn_synack_others() {
     let synack1: Packet<Box<[u8]>> = Packet::SynAck;
     let end1: Packet<Box<[u8]>> = Packet::End(5);
     let abort1: Packet<Box<[u8]>> = Packet::Abort(10);
+    let heartbeat1: Packet<Box<[u8]>> = Packet::Heartbeat;
     let syn_packet = UdpPacket::from(&syn1);
     let synack_packet = UdpPacket::from(&synack1);
     let end_packet = UdpPacket::from(&end1);
     let abort_packet = UdpPacket::from(&abort1);
+    let heartbeat_packet = UdpPacket::from(&heartbeat1);
 
     let syn2 = syn_packet.compute_packet().unwrap();
     let synack2 = synack_packet.compute_packet().unwrap();
     let end2 = end_packet.compute_packet().unwrap();
     let abort2 = abort_packet.compute_packet().unwrap();
+    let heartbeat2 = heartbeat_packet.compute_packet().unwrap();
     if !syn1.cmp_with(&syn2) {
         panic!("{:?} != {:?}, syn serialized is different from deserialized", syn1, syn2);
     }
@@ -422,6 +433,9 @@ fn udp_ser_de_syn_synack_others() {
     }
     if !abort1.cmp_with(&abort2) {
         panic!("{:?} != {:?}, abort serialized is different from deserialized", abort1, abort2);
+    }
+    if !heartbeat1.cmp_with(&heartbeat2) {
+        panic!("{:?} != {:?}, heartbeat serialized is different from deserialized", heartbeat1, heartbeat2);
     }
 }
 
