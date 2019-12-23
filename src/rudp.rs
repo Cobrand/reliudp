@@ -78,12 +78,12 @@ pub enum SocketStatus {
     SynSent,
     SynReceived,
 
-    TimeoutError,
+    TimeoutError(u64),
 
     Connected,
 
-    TerminateSent,
-    TerminateReceived,
+    TerminateSent(u64),
+    TerminateReceived(u64),
 }
 
 impl SocketStatus {
@@ -93,13 +93,13 @@ impl SocketStatus {
 
     pub (crate) fn event(self) -> Option<SocketEvent> {
         match self {
-            SocketStatus::TimeoutError => Some(SocketEvent::Timeout),
-            SocketStatus::TerminateSent => Some(SocketEvent::Ended),
+            SocketStatus::TimeoutError(_) => Some(SocketEvent::Timeout),
+            SocketStatus::TerminateSent(_) => Some(SocketEvent::Ended),
             // // this is actually commented to tell you that you should NOT uncomment this,
             // // when we receive a packet, we automatically send the right event (ended or aborted)
             // // so there is no need to have a similar event sent here as well
             // SocketStatus::TerminateReceived => Some(SocketEvent::Ended),
-            SocketStatus::TerminateReceived => None,
+            SocketStatus::TerminateReceived(_) => None,
             SocketStatus::Connected => Some(SocketEvent::Connected),
             _ => None
         }
@@ -108,7 +108,16 @@ impl SocketStatus {
     pub fn is_finished(self) -> bool {
         use SocketStatus::*;
         match self {
-            TimeoutError | TerminateSent | TerminateReceived => true,
+            TimeoutError(_) | TerminateSent(_) | TerminateReceived(_) => true,
+            _ => false
+        }
+    }
+
+    /// Returns true if the connection is finished and old enough to be deleted permanently.
+    pub fn is_finished_and_old(self, current_t: u64) -> bool {
+        use SocketStatus::*;
+        match self {
+            TimeoutError(t) | TerminateSent(t) | TerminateReceived(t) => current_t.saturating_sub(t) >= 1000,
             _ => false
         }
     }
@@ -405,7 +414,7 @@ impl RUdpSocket {
             match r {
                 None => return None,
                 Some(ReceivedMessage::Abort(_id)) => {
-                    self.set_status(SocketStatus::TerminateReceived);
+                    self.set_status(SocketStatus::TerminateReceived(self.iteration_n));
                     return Some(SocketEvent::Aborted)
                 },
                 Some(ReceivedMessage::Ack(seq_id, data)) => {
@@ -416,7 +425,7 @@ impl RUdpSocket {
                     return Some(SocketEvent::Data(data))
                 },
                 Some(ReceivedMessage::End(_id)) => {
-                    self.set_status(SocketStatus::TerminateReceived);
+                    self.set_status(SocketStatus::TerminateReceived(self.iteration_n));
                     return Some(SocketEvent::Ended)
                 },
                 Some(ReceivedMessage::Heartbeat) => {},
@@ -456,7 +465,7 @@ impl RUdpSocket {
         }
         if self.iteration_n >= self.last_received_message + self.timeout_delay && !self.socket.status().is_finished() {
             log::warn!("socket {} timed out: last_received_message={}, iteration_n={}", self.remote_addr(), self.last_received_message, self.iteration_n);
-            self.set_status(SocketStatus::TimeoutError);
+            self.set_status(SocketStatus::TimeoutError(self.iteration_n));
         }
         for (seq_id, ack) in acks_to_send {
             self.send_ack(seq_id, ack)?;
@@ -507,6 +516,11 @@ impl RUdpSocket {
     #[inline]
     pub fn status(&self) -> SocketStatus {
         self.socket.status
+    }
+
+    /// Returns whether or not you should clear this RUdp client.
+    pub fn should_clear(&self) -> bool {
+        self.socket.status.is_finished_and_old(self.iteration_n)
     }
     
     #[inline]

@@ -128,7 +128,7 @@ impl RUdpServer {
     /// Does internal processing for all remotes. Must be done before receiving events.
     pub fn next_tick(&mut self) -> IoResult<()> {
         self.remotes.retain(|_, v| {
-            ! v.socket.status().is_finished()
+            ! v.should_clear()
         });
         for socket in self.remotes.values_mut() {
             socket.incr_tick();

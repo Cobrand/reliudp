@@ -1,7 +1,7 @@
 [package]
 authors = ["Cobrand <cobrandw@gmail.com>"]
 name = "reliudp"
-version = "0.1.3"
+version = "0.1.4"
 
 description = "A custom Reliable UDP protocol for Rust"
 license = "MIT"
