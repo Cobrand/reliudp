@@ -408,9 +408,6 @@ impl RUdpSocket {
     fn next_packet_event(&mut self) -> Option<SocketEvent> {
         loop {
             let r = self.packet_handler.next_received_message();
-            if r.is_some() {
-                log::debug!("received message {:?} from remote {} at n={}", r, self.socket.remote_addr, self.iteration_n);
-            }
             match r {
                 None => return None,
                 Some(ReceivedMessage::Abort(_id)) => {
@@ -422,6 +419,7 @@ impl RUdpSocket {
                     self.sent_data_tracker.receive_ack(seq_id, data, self.iteration_n, &self.socket);
                 },
                 Some(ReceivedMessage::Data(_id, data)) => {
+                    log::debug!("received data {:?} from remote {} at n={}", data, self.socket.remote_addr, self.iteration_n);
                     return Some(SocketEvent::Data(data))
                 },
                 Some(ReceivedMessage::End(_id)) => {
