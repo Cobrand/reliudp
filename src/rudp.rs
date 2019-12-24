@@ -419,7 +419,7 @@ impl RUdpSocket {
                     self.sent_data_tracker.receive_ack(seq_id, data, self.iteration_n, &self.socket);
                 },
                 Some(ReceivedMessage::Data(_id, data)) => {
-                    log::debug!("received data {:?} from remote {} at n={}", data, self.socket.remote_addr, self.iteration_n);
+                    log::trace!("received data {:?} from remote {} at n={}", data, self.socket.remote_addr, self.iteration_n);
                     return Some(SocketEvent::Data(data))
                 },
                 Some(ReceivedMessage::End(_id)) => {
