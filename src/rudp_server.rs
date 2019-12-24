@@ -23,6 +23,7 @@ pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
     pub (self) timeout_delay: Option<u64>,
+    pub (self) heartbeat_delay: Option<u64>,
 }
 
 impl RUdpServer {
@@ -37,6 +38,7 @@ impl RUdpServer {
             remotes: HashMap::default(),
             udp_socket,
             timeout_delay: None,
+            heartbeat_delay: None,
         })
     }
 
@@ -44,6 +46,14 @@ impl RUdpServer {
         if let Some(delay) = self.timeout_delay {
             for socket in self.remotes.values_mut() {
                 socket.set_timeout_delay(delay);
+            }
+        }
+    }
+
+    fn update_heartbeat_delay_for_remotes(&mut self) {
+        if let Some(delay) = self.heartbeat_delay {
+            for socket in self.remotes.values_mut() {
+                socket.set_heartbeat_delay(delay);
             }
         }
     }
@@ -63,6 +73,20 @@ impl RUdpServer {
         self.update_timeout_delay_for_remotes();
     }
 
+    /// Set the number of iterations required before we send a "heartbeat" message to the clients, so that they avoid seeing us as timeout-ed.
+    ///
+    /// This delay is applied to all existing and new clients
+    pub fn set_heartbeat(&mut self, delay: u64) {
+        self.heartbeat_delay = Some(delay);
+        self.update_heartbeat_delay_for_remotes();
+    }
+
+    pub fn set_heartbeat_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
+        assert!(tick_interval_milliseconds > 0);
+        self.heartbeat_delay = Some(milliseconds / tick_interval_milliseconds);
+        self.update_heartbeat_delay_for_remotes();
+    }
+
     fn process_one_incoming(&mut self, udp_packet: UdpPacket<Box<[u8]>>, remote_addr: SocketAddr) -> IoResult<()> {
         match self.remotes.entry(remote_addr) {
             Entry::Occupied(mut o) => {
@@ -78,6 +102,9 @@ impl RUdpServer {
                     Ok(mut rudp_socket) => {
                         if let Some(delay) = self.timeout_delay {
                             rudp_socket.set_timeout_delay(delay)
+                        }
+                        if let Some(heartbeat) = self.heartbeat_delay {
+                            rudp_socket.set_heartbeat_delay(heartbeat)
                         }
                         vacant.insert(rudp_socket);
                     },
