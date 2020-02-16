@@ -98,6 +98,7 @@ impl RUdpServer {
                     Err(RUdpCreateError::IoError(io_error)) => return Err(io_error),
                     Err(RUdpCreateError::UnexpectedData) => {
                         /* ignore unexpected data */
+                        log::trace!("received unexpected UDP data from unknown remote {}", remote_addr);
                     },
                     Ok(mut rudp_socket) => {
                         if let Some(delay) = self.timeout_delay {

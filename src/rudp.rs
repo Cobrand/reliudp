@@ -494,6 +494,7 @@ impl RUdpSocket {
                     if remote_addr == self.socket.remote_addr {
                         self.add_received_packet(packet);
                     } else {
+                        log::trace!("received unexpected UDP data from someone which was not remote server {}", remote_addr);
                         /* received packet from unknown source */
                     }
                 },
