@@ -399,12 +399,14 @@ impl RUdpSocket {
         self.send_udp_packet(&udp_packet)
     }
 
+    /// Add a packet to a queue, to be processed later.
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>) {
         self.last_received_message = self.iteration_n;
         log::trace!("received packet {:?} from remote {} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
         self.packet_handler.add_received_packet(udp_packet, self.iteration_n);
     }
 
+    /// Process the next paquet received in the queue.
     fn next_packet_event(&mut self) -> Option<SocketEvent> {
         loop {
             let r = self.packet_handler.next_received_message();
@@ -468,8 +470,17 @@ impl RUdpSocket {
         for (seq_id, ack) in acks_to_send {
             self.send_ack(seq_id, ack)?;
         }
-        if self.iteration_n.saturating_sub(self.last_sent_message) > self.heartbeat_delay {
-            self.send_heartbeat()?;
+        if self.status().is_connected() {
+            if self.iteration_n.saturating_sub(self.last_sent_message) > self.heartbeat_delay {
+                self.send_heartbeat()?;
+            }
+        } else if self.status() == SocketStatus::SynSent {
+            // we're attempting to connect..
+            if self.iteration_n % 180 == 0 {
+                // every 3 seconds (we incremented tick once before this call so 0 is out)
+                // resend a "syn" to attempt to connect.
+                self.send_syn()?;
+            }
         }
         self.sent_data_tracker.next_tick(self.iteration_n, &self.socket);
         Ok(())
@@ -488,6 +499,7 @@ impl RUdpSocket {
         self.incr_tick();
         let mut done = false;
 
+        // receive incoming packets and put them in a queue for processing
         while !done {
             match UdpPacket::<Box<[u8]>>::from_udp_socket(&self.socket.udp_socket) {
                 Ok((packet, remote_addr)) => {
