@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(5));
+        ::std::thread::sleep(::std::time::Duration::from_millis(2));
         if received.len() >= 256 {
             println!("Finished! Values in order:");
             print_values(&received);
@@ -44,9 +44,9 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
     print_values(&received);
     println!();
     print!("Missing values:");
-    for v in 0..0xFF {
+    for v in 0..=0xFF {
         if !received.contains(&v) {
-            print!("{:>3}", v);
+            print!("{:>3} ", v);
         }
     }
     println!();
