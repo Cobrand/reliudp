@@ -1,13 +1,13 @@
 use std::net::UdpSocket;
-use udp_packet_handler::{UdpPacketHandler, ReceivedMessage};
-use udp_packet::{UdpPacket, Packet};
+use crate::udp_packet_handler::{UdpPacketHandler, ReceivedMessage};
+use crate::udp_packet::{UdpPacket, Packet};
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::io::{Error as IoError, ErrorKind as IoErrorKind, Result as IoResult};
 use std::sync::Arc;
-use ack::Ack;
-use sent_data_tracker::SentDataTracker;
+use crate::ack::Ack;
+use crate::sent_data_tracker::SentDataTracker;
 use std::collections::VecDeque;
-use ping_handler::*;
+use crate::ping_handler::*;
 
 /// Represents an event of the Socket.
 ///

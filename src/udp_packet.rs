@@ -1,7 +1,7 @@
 use byteorder::{BigEndian, ByteOrder};
-use consts::*;
-use fragment::*;
-use misc::*;
+use crate::consts::*;
+use crate::fragment::*;
+use crate::misc::*;
 
 use crc::crc32::checksum_ieee as crc32_check;
 

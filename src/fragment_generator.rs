@@ -1,4 +1,4 @@
-use fragment::{Fragment, FragmentMeta};
+use crate::fragment::{Fragment, FragmentMeta};
 
 pub struct FragmentGenerator<'a, I> where I: Iterator<Item = &'a [u8]> + Clone {
     seq_id: u32,

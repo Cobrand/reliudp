@@ -1,6 +1,6 @@
-use misc::ClonableIterator;
-use consts::*;
-use fragment_generator::FragmentGenerator;
+use crate::misc::ClonableIterator;
+use crate::consts::*;
+use crate::fragment_generator::FragmentGenerator;
 
 const MAX_FRAGMENT_MESSAGE_SIZE: usize = MAX_UDP_MESSAGE_SIZE - FRAG_DATA_START_BYTE;
 

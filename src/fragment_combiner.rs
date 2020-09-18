@@ -1,9 +1,9 @@
 use fnv::FnvHashMap as HashMap;
 use std::collections::VecDeque;
 use itertools::Itertools;
-use ack::{Acks, Ack};
-use fragment::{Fragment, build_data_from_fragments};
-use fragment::FragmentMeta;
+use crate::ack::{Acks, Ack};
+use crate::fragment::{Fragment, build_data_from_fragments};
+use crate::fragment::FragmentMeta;
 
 pub (crate) trait FragmentDataRef: ::std::fmt::Debug + AsRef<[u8]> + 'static {}
 
@@ -225,7 +225,7 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
             let should_send: bool = fragment_set.should_send_ack() && match fragment_set.last_sent_ack_iteration {
                 Some(last_iter) => {
                     debug_assert!(iteration_n > last_iter);
-                    iteration_n - last_iter >= ::consts::ACK_SEND_INTERVAL
+                    iteration_n - last_iter >= crate::consts::ACK_SEND_INTERVAL
                 },
                 // if there are no previous recordings of an ack being sent, send it right away
                 None => true,

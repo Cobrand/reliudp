@@ -1,10 +1,10 @@
 use fnv::FnvHashMap as HashMap;
-use rudp::UdpSocketWrapper;
-use fragment::{build_fragments_from_bytes, FragmentMeta};
-use udp_packet::UdpPacket;
-use ack::Ack;
-use rudp::MessageType;
-use misc::BoxedSlice;
+use crate::rudp::UdpSocketWrapper;
+use crate::fragment::{build_fragments_from_bytes, FragmentMeta};
+use crate::udp_packet::UdpPacket;
+use crate::ack::Ack;
+use crate::rudp::MessageType;
+use crate::misc::BoxedSlice;
 
 use hex::encode as hex_encode;
 
@@ -73,7 +73,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
 
     /// Returns whether or not all acks have been received by the other party
     pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, iteration_n: u64, socket: &UdpSocketWrapper) -> bool {
-        if self.last_sent_packet + ::consts::PACKET_RESEND_INTERVAL >= iteration_n {
+        if self.last_sent_packet + crate::consts::PACKET_RESEND_INTERVAL >= iteration_n {
             self.resend_packets(seq_id, iteration_n, socket)
         } else {
             false
