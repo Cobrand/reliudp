@@ -8,6 +8,7 @@ use crate::ack::Ack;
 use crate::sent_data_tracker::SentDataTracker;
 use std::collections::VecDeque;
 use crate::ping_handler::*;
+use std::time::{Duration, Instant};
 
 /// Represents an event of the Socket.
 ///
@@ -47,13 +48,13 @@ pub enum MessageType {
     Forgettable,
     /// A Key but expirable message.
     ///
-    /// The parameter holds the number of
-    /// frames this message expires after. If this parameter is 0,
+    /// The parameter holds the amount of
+    /// time this message expires after. If this parameter is 0,
     /// the behavior is the same as Forgettable.
     ///
     /// As long as this message is still valid, it will try to re-send
     /// messages if Socket suspects it did not get the message in time.
-    KeyExpirableMessage(u32),
+    KeyExpirableMessage(Duration),
     /// A key message that should arrive everytime.
     ///
     /// A long at the socket doesn't receive the correct ack for this message,
@@ -75,15 +76,15 @@ impl MessageType {
 /// Represents the internal connection status of the Socket
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SocketStatus {
-    SynSent,
+    SynSent(Instant),
     SynReceived,
 
-    TimeoutError(u64),
+    TimeoutError(Instant),
 
     Connected,
 
-    TerminateSent(u64),
-    TerminateReceived(u64),
+    TerminateSent(Instant),
+    TerminateReceived(Instant),
 }
 
 impl SocketStatus {
@@ -114,10 +115,10 @@ impl SocketStatus {
     }
 
     /// Returns true if the connection is finished and old enough to be deleted permanently.
-    pub fn is_finished_and_old(self, current_t: u64) -> bool {
+    pub fn is_finished_and_old(self, now: Instant) -> bool {
         use SocketStatus::*;
         match self {
-            TimeoutError(t) | TerminateSent(t) | TerminateReceived(t) => current_t.saturating_sub(t) >= 1000,
+            TimeoutError(t) | TerminateSent(t) | TerminateReceived(t) => (now - t).as_secs() >= 10,
             _ => false
         }
     }
@@ -149,16 +150,15 @@ pub struct RUdpSocket {
     // pub (self) last_remote_seq_id: u32,
     pub (self) next_local_seq_id: u32,
 
-    pub (self) iteration_n: u64,
-    pub (self) last_received_message: u64,
-    pub (self) last_sent_message: u64,
+    pub (self) cached_now: Instant,
+    pub (self) last_received_message: Instant,
+    pub (self) last_sent_message: Instant,
 
-    /// number of iterations required before the socket is set as timeout. Default is 600, but it's heavily
-    /// recommended to change this value to your needs.
-    pub (self) timeout_delay: u64,
+    /// required before the socket is set as timeout. Default is 10s
+    pub (self) timeout_delay: Duration,
 
-    /// number of iterations required before we send a sample "heartbeat" message to avoid timeouts.
-    pub (self) heartbeat_delay: u64,
+    /// required before we send a sample "heartbeat" message to avoid timeouts.
+    pub (self) heartbeat_delay: Duration,
 }
 
 #[derive(Debug)]
@@ -218,6 +218,9 @@ impl UdpSocketWrapper {
     }
 }
 
+const DEFAULT_TIMEOUT_DELAY: Duration = Duration::from_secs(10);
+const DEFAULT_HEARTBEAT_DELAY: Duration = Duration::from_secs(1);
+
 impl RUdpSocket {
     /// Creates a Socket and connects to the remote instantly.
     ///
@@ -237,8 +240,9 @@ impl RUdpSocket {
         udp_socket.set_nonblocking(true)?;
         let local_addr = udp_socket.local_addr()?;
 
+        let now = Instant::now();
         let mut rudp_socket = RUdpSocket {
-            socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynSent, remote_addr),
+            socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynSent(now), remote_addr),
             local_addr,
             sent_data_tracker: SentDataTracker::new(),
             packet_handler: UdpPacketHandler::new(),
@@ -246,11 +250,11 @@ impl RUdpSocket {
             events: Default::default(),
             ping_handler: PingHandler::new(),
             next_local_seq_id: 0,
-            iteration_n: 0,
-            last_received_message: 0,
-            last_sent_message: 0,
-            timeout_delay: 600,
-            heartbeat_delay: 20,
+            cached_now: now,
+            last_received_message: now,
+            last_sent_message: now,
+            timeout_delay: DEFAULT_TIMEOUT_DELAY,
+            heartbeat_delay: DEFAULT_HEARTBEAT_DELAY,
         };
         log::info!("trying to connect to remote {}...", rudp_socket.remote_addr());
         rudp_socket.send_syn()?;
@@ -261,6 +265,7 @@ impl RUdpSocket {
     pub (crate) fn new_incoming(udp_socket: Arc<UdpSocket>, incoming_packet: UdpPacket<Box<[u8]>>, incoming_address: SocketAddr) -> Result<RUdpSocket, RUdpCreateError> {
         if let Ok(Packet::Syn) = incoming_packet.compute_packet() {
             let local_addr = udp_socket.local_addr()?;
+            let now = Instant::now();
             let mut rudp_socket = RUdpSocket {
                 socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynReceived, incoming_address),
                 local_addr,
@@ -270,11 +275,11 @@ impl RUdpSocket {
                 events: Default::default(),
                 next_local_seq_id: 0,
                 ping_handler: PingHandler::new(),
-                iteration_n: 0,
-                last_received_message: 0,
-                last_sent_message: 0,
-                timeout_delay: 600,
-                heartbeat_delay: 20,
+                cached_now: now,
+                last_received_message: now,
+                last_sent_message: now,
+                timeout_delay: DEFAULT_TIMEOUT_DELAY,
+                heartbeat_delay: DEFAULT_HEARTBEAT_DELAY,
             };
             rudp_socket.send_synack()?;
             log::info!("received incoming connection from {}", rudp_socket.remote_addr());
@@ -290,24 +295,14 @@ impl RUdpSocket {
     /// 
     /// For instance, if your tick is every 50ms, and your timeout_delay is of 24,
     /// then roughly 50*24=1200ms (=1.2s) without a message from the remote will cause a timeout error.
-    pub fn set_timeout_delay(&mut self, timeout_delay: u64) {
+    pub fn set_timeout_delay(&mut self, timeout_delay: Duration) {
         self.timeout_delay = timeout_delay;
-    }
-
-    pub fn set_timeout_delay_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
-        assert!(tick_interval_milliseconds > 0);
-        self.timeout_delay = milliseconds / tick_interval_milliseconds;
     }
 
     /// Set the number of iterations required before we send a "heartbeat" message to the remote,
     /// to make sure they don't consider us as timed out.
-    pub fn set_heartbeat_delay(&mut self, heartbeat_delay: u64) {
+    pub fn set_heartbeat_delay(&mut self, heartbeat_delay: Duration) {
         self.heartbeat_delay = heartbeat_delay;
-    }
-
-    pub fn set_heartbeat_delay_with(&mut self, milliseconds: u64, heartbeat_interval_milliseconds: u64) {
-        assert!(heartbeat_interval_milliseconds > 0);
-        self.heartbeat_delay = milliseconds / heartbeat_interval_milliseconds;
     }
 
     #[inline]
@@ -341,12 +336,12 @@ impl RUdpSocket {
         if message_type.has_ack() {
             self.ping_handler.ping(self.next_local_seq_id);
         }
-        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.iteration_n, message_type, &self.socket);
+        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, &self.socket);
         self.next_local_seq_id += 1;
     }
 
     fn send_udp_packet<P: AsRef<[u8]>>(&mut self, udp_packet: &UdpPacket<P>) -> std::io::Result<()> {
-        self.last_sent_message = self.iteration_n;
+        self.last_sent_message = self.cached_now;
         self.socket.send_udp_packet(&udp_packet)
     }
 
@@ -401,9 +396,9 @@ impl RUdpSocket {
 
     /// Add a packet to a queue, to be processed later.
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>) {
-        self.last_received_message = self.iteration_n;
-        log::trace!("received packet {:?} from remote {} at n={}", udp_packet, self.socket.remote_addr, self.iteration_n);
-        self.packet_handler.add_received_packet(udp_packet, self.iteration_n);
+        self.last_received_message = self.cached_now;
+        log::trace!("received packet {:?} from remote {}", udp_packet, self.socket.remote_addr);
+        self.packet_handler.add_received_packet(udp_packet, self.cached_now);
     }
 
     /// Process the next paquet received in the queue.
@@ -413,24 +408,24 @@ impl RUdpSocket {
             match r {
                 None => return None,
                 Some(ReceivedMessage::Abort(_id)) => {
-                    self.set_status(SocketStatus::TerminateReceived(self.iteration_n));
+                    self.set_status(SocketStatus::TerminateReceived(self.cached_now));
                     return Some(SocketEvent::Aborted)
                 },
                 Some(ReceivedMessage::Ack(seq_id, data)) => {
                     self.ping_handler.pong(seq_id);
-                    self.sent_data_tracker.receive_ack(seq_id, data, self.iteration_n, &self.socket);
+                    self.sent_data_tracker.receive_ack(seq_id, data, self.cached_now, &self.socket);
                 },
                 Some(ReceivedMessage::Data(_id, data)) => {
-                    log::trace!("received data {:?} from remote {} at n={}", data, self.socket.remote_addr, self.iteration_n);
+                    log::trace!("received data {:?} from remote {}", data, self.socket.remote_addr);
                     return Some(SocketEvent::Data(data))
                 },
                 Some(ReceivedMessage::End(_id)) => {
-                    self.set_status(SocketStatus::TerminateReceived(self.iteration_n));
+                    self.set_status(SocketStatus::TerminateReceived(self.cached_now));
                     return Some(SocketEvent::Ended)
                 },
                 Some(ReceivedMessage::Heartbeat) => {},
                 Some(ReceivedMessage::SynAck) => {
-                    if let SocketStatus::SynSent = self.socket.status() {
+                    if let SocketStatus::SynSent(_) = self.socket.status() {
                         log::info!("connected to remote {}", self.remote_addr());
                         self.set_status(SocketStatus::Connected);
                     } else {
@@ -454,35 +449,40 @@ impl RUdpSocket {
         self.ping_handler.current_ping_ms()
     }
 
-    pub (crate) fn incr_tick(&mut self) {
-        self.iteration_n += 1;
+    pub (crate) fn update_cached_now(&mut self) {
+        self.cached_now = Instant::now();
     }
 
     pub (crate) fn inner_tick(&mut self) -> IoResult<()> {
-        let acks_to_send = self.packet_handler.tick(self.iteration_n);
+        let acks_to_send = self.packet_handler.tick(self.cached_now);
         while let Some(socket_event) = self.next_packet_event() {
             self.events.push_back(socket_event);
         }
-        if self.iteration_n >= self.last_received_message + self.timeout_delay && !self.socket.status().is_finished() {
-            log::warn!("socket {} timed out: last_received_message={}, iteration_n={}", self.remote_addr(), self.last_received_message, self.iteration_n);
-            self.set_status(SocketStatus::TimeoutError(self.iteration_n));
+        if self.cached_now >= self.last_received_message + self.timeout_delay && !self.socket.status().is_finished() {
+            let ago: Duration = self.cached_now - self.last_received_message;
+            log::warn!("socket {} timed out: last_received_message was {}s ago", self.remote_addr(), ago.as_secs_f32());
+            self.set_status(SocketStatus::TimeoutError(self.cached_now));
         }
         for (seq_id, ack) in acks_to_send {
             self.send_ack(seq_id, ack)?;
         }
         if self.status().is_connected() {
-            if self.iteration_n.saturating_sub(self.last_sent_message) > self.heartbeat_delay {
+            if self.cached_now - self.last_sent_message > self.heartbeat_delay {
                 self.send_heartbeat()?;
             }
-        } else if self.status() == SocketStatus::SynSent {
-            // we're attempting to connect..
-            if self.iteration_n % 180 == 0 {
-                // every 3 seconds (we incremented tick once before this call so 0 is out)
-                // resend a "syn" to attempt to connect.
-                self.send_syn()?;
+        } else { 
+            if let SocketStatus::SynSent(last_sent) = self.status() {
+                // we're attempting to connect..
+                // but if we haven't received an answer for 3 seconds, the message might have been missed and we'll resend it.
+                if self.cached_now > last_sent + Duration::from_secs(3) {
+                    // every 3 seconds (we incremented tick once before this call so 0 is out)
+                    // resend a "syn" to attempt to connect.
+                    self.send_syn()?;
+                    self.set_status(SocketStatus::SynSent(self.cached_now))
+                }
             }
         }
-        self.sent_data_tracker.next_tick(self.iteration_n, &self.socket);
+        self.sent_data_tracker.next_tick(self.cached_now, &self.socket);
         Ok(())
     }
 
@@ -496,7 +496,7 @@ impl RUdpSocket {
     /// This warning applies if this socket has been borrowed from a `RUdpServer` as well,
     /// because all the remotes are sharing the same port.
     pub fn next_tick(&mut self) -> IoResult<()> {
-        self.incr_tick();
+        self.update_cached_now();
         let mut done = false;
 
         // receive incoming packets and put them in a queue for processing
@@ -520,6 +520,7 @@ impl RUdpSocket {
                 },
             };
         };
+        // process everything we have received
         self.inner_tick()?;
         Ok(())
     }
@@ -531,7 +532,7 @@ impl RUdpSocket {
 
     /// Returns whether or not you should clear this RUdp client.
     pub fn should_clear(&self) -> bool {
-        self.socket.status.is_finished_and_old(self.iteration_n)
+        self.socket.status.is_finished_and_old(self.cached_now)
     }
     
     #[inline]
@@ -547,7 +548,7 @@ impl RUdpSocket {
 impl Drop for RUdpSocket {
     fn drop(&mut self) {
         match self.socket.status() {
-            SocketStatus::Connected | SocketStatus::SynSent | SocketStatus::SynReceived => {
+            SocketStatus::Connected | SocketStatus::SynSent(_) | SocketStatus::SynReceived => {
                 // TODO: At least log the error
                 let _r = self.send_abort();
             },

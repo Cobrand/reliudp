@@ -5,6 +5,7 @@ use crate::udp_packet::UdpPacket;
 use crate::ack::Ack;
 use crate::rudp::MessageType;
 use crate::misc::BoxedSlice;
+use std::time::Instant;
 
 use hex::encode as hex_encode;
 
@@ -12,7 +13,7 @@ use hex::encode as hex_encode;
 pub (crate) enum PacketExpiration {
     Key,
     ExpirableKey {
-        expiration_iter_n: u64,
+        expiration: Instant,
     }
 }
 
@@ -27,11 +28,11 @@ impl From<Option<PacketExpiration>> for FragmentMeta {
 }
 
 impl PacketExpiration {
-    fn from_message_type(message_type: MessageType, iteration_n: u64) -> Option<PacketExpiration> {
+    fn from_message_type(message_type: MessageType, now: Instant) -> Option<PacketExpiration> {
         match message_type {
             MessageType::Forgettable => None,
             MessageType::KeyExpirableMessage(v) => Some(PacketExpiration::ExpirableKey {
-                expiration_iter_n: u64::from(v).saturating_add(iteration_n)
+                expiration: now + v,
             }),
             MessageType::KeyMessage => Some(PacketExpiration::Key),
         }
@@ -43,8 +44,8 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     pub (self) frag_total: u8,
     pub (self) expiration_type: PacketExpiration,
     /// (iteration_n, ack_data)
-    pub (self) last_received_ack: Option<(u64, Ack<BoxedSlice<u8>>)>,
-    pub (self) last_sent_packet: u64,
+    pub (self) last_received_ack: Option<(Instant, Ack<BoxedSlice<u8>>)>,
+    pub (self) last_sent_packet: Instant,
 }
 
 impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
@@ -61,36 +62,36 @@ impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
 }
 
 impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
-    pub fn new(data: D, frag_total: u8, iteration_n: u64, expiration_type: PacketExpiration) -> SentDataSet<D> {
+    pub fn new(data: D, frag_total: u8, now: Instant, expiration_type: PacketExpiration) -> SentDataSet<D> {
         SentDataSet {
             data,
             frag_total,
             expiration_type,
             last_received_ack: None,
-            last_sent_packet: iteration_n,
+            last_sent_packet: now,
         }
     }
 
     /// Returns whether or not all acks have been received by the other party
-    pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, iteration_n: u64, socket: &UdpSocketWrapper) -> bool {
-        if self.last_sent_packet + crate::consts::PACKET_RESEND_INTERVAL >= iteration_n {
-            self.resend_packets(seq_id, iteration_n, socket)
+    pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> bool {
+        if now >= self.last_sent_packet + crate::consts::DEFAULT_PACKET_RESEND_INTERVAL {
+            self.resend_packets(seq_id, now, socket)
         } else {
             false
         }
     }
 
     #[inline]
-    pub fn is_expired(&self, iteration_n: u64) -> bool {
+    pub fn is_expired(&self, now: Instant) -> bool {
         match self.expiration_type {
-            PacketExpiration::ExpirableKey { expiration_iter_n } =>
-                iteration_n > expiration_iter_n,
+            PacketExpiration::ExpirableKey { expiration } =>
+                now > expiration,
             _ => false,
         }
     }
 
     /// Returns whether or not all acks have been received by the other party
-    pub (self) fn resend_packets(&mut self, seq_id: u32, iteration_n: u64, socket: &UdpSocketWrapper) -> bool {
+    pub (self) fn resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> bool {
         let frag_meta = FragmentMeta::from(Some(self.expiration_type));
         let (fragments, frag_total) = build_fragments_from_bytes(self.data.as_ref(), seq_id, frag_meta).expect("Unreachable: message has been sent once but couldn't be resent because too big");
         let complete = match &self.last_received_ack {
@@ -122,7 +123,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                 false
             },
         };
-        self.last_sent_packet = iteration_n;
+        self.last_sent_packet = now;
         complete
     } 
 }
@@ -139,8 +140,8 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
     }
 
-    pub fn send_data(&mut self, seq_id: u32, data: D, iteration_n: u64, message_type: MessageType, socket: &UdpSocketWrapper) {
-        let expiration = PacketExpiration::from_message_type(message_type, iteration_n);
+    pub fn send_data(&mut self, seq_id: u32, data: D, now: Instant, message_type: MessageType, socket: &UdpSocketWrapper) {
+        let expiration = PacketExpiration::from_message_type(message_type, now);
         let (fragments, frag_total) = build_fragments_from_bytes(data.as_ref(), seq_id, FragmentMeta::from(expiration)).expect("Your message is too big to be sent via RUDP.");
         for fragment in fragments {
             let _r = socket.send_udp_packet(&UdpPacket::from(&fragment));
@@ -148,7 +149,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
 
         if let Some(packet_expiration) = expiration {
-            let sent_data_set = SentDataSet::new(data.clone(), frag_total, iteration_n, packet_expiration);
+            let sent_data_set = SentDataSet::new(data.clone(), frag_total, now, packet_expiration);
 
             if self.sets.insert(seq_id, sent_data_set).is_some() {
                 panic!("seq_id {:?} is already registered in sent_data_tracker", seq_id);
@@ -156,36 +157,42 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
     }
 
-    pub fn receive_ack(&mut self, seq_id: u32, data: BoxedSlice<u8>, iteration_n: u64, socket: &UdpSocketWrapper) {
-        if let Some(set) = self.sets.get_mut(&seq_id) {
+    fn remove_seq_id(&mut self, seq_id: u32) {
+        self.sets.remove(&seq_id);
+    }
+
+    pub fn receive_ack(&mut self, seq_id: u32, data: BoxedSlice<u8>, now: Instant, socket: &UdpSocketWrapper) {
+        let remove_ack = if let Some(set) = self.sets.get_mut(&seq_id) {
             let ack = Ack::new(data);
-            set.last_received_ack = Some((iteration_n, ack));
-            set.resend_packets(seq_id, iteration_n, socket);
+            set.last_received_ack = Some((now, ack));
+            set.resend_packets(seq_id, now, socket)
         } else {
             // couldn't find the matching fragment set... 2 possibilities:
             // * The remote lied, we never had such a seq_id
             // * We dropped the message on our end, so we can't even try to recover it 
             // in either case, the only thing we can do is to drop the ack and give up on life.
+            true
+        };
+        if remove_ack {
+            self.remove_seq_id(seq_id);
         }
     }
 
     /// Clears data that is too old to be stored here (acks missing a part taht are too old, ...)
-    pub fn next_tick(&mut self, iteration_n: u64, socket: &UdpSocketWrapper) {
+    pub fn next_tick(&mut self, now: Instant, socket: &UdpSocketWrapper) {
         let mut entries_to_remove: Vec<_> = vec!();
         for (seq_id, ref mut set) in &mut self.sets {
-            if set.is_expired(iteration_n) {
+            if set.is_expired(now) {
                 entries_to_remove.push(*seq_id);
                 continue;
             }
-            let ack_received = set.attempt_resend_packets(*seq_id, iteration_n, socket);
+            let ack_received = set.attempt_resend_packets(*seq_id, now, socket);
             if ack_received {
                 entries_to_remove.push(*seq_id);
             }
         }
         for seq_id in entries_to_remove {
-            if self.sets.remove(&seq_id).is_none() {
-                panic!("removing entry seq_id={} that doesn't exist... this is a bug", seq_id);
-            }
+            self.remove_seq_id(seq_id);
         }
     }
 }

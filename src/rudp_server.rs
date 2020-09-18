@@ -3,6 +3,7 @@ use std::net::{SocketAddr, UdpSocket, ToSocketAddrs};
 use std::io::{ErrorKind as IoErrorKind, Result as IoResult};
 use std::sync::Arc;
 use crate::udp_packet::UdpPacket;
+use std::time::Duration;
 
 use std::collections::hash_map::Entry;
 use fnv::{FnvHashMap as HashMap};
@@ -22,8 +23,8 @@ use std::ops::{Index, IndexMut};
 pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
-    pub (self) timeout_delay: Option<u64>,
-    pub (self) heartbeat_delay: Option<u64>,
+    pub (self) timeout_delay: Option<Duration>,
+    pub (self) heartbeat_delay: Option<Duration>,
 }
 
 impl RUdpServer {
@@ -62,28 +63,16 @@ impl RUdpServer {
     /// 
     /// For instance, if your tick is every 50ms, and your timeout_delay is of 24,
     /// then roughly 50*24=1200ms (=1.2s) without a message from the remote will cause a timeout error.
-    pub fn set_timeout_delay(&mut self, timeout_delay: u64) {
+    pub fn set_timeout_delay(&mut self, timeout_delay: Duration) {
         self.timeout_delay = Some(timeout_delay);
-        self.update_timeout_delay_for_remotes();
-    }
-
-    pub fn set_timeout_delay_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
-        assert!(tick_interval_milliseconds > 0);
-        self.timeout_delay = Some(milliseconds / tick_interval_milliseconds);
         self.update_timeout_delay_for_remotes();
     }
 
     /// Set the number of iterations required before we send a "heartbeat" message to the clients, so that they avoid seeing us as timeout-ed.
     ///
     /// This delay is applied to all existing and new clients
-    pub fn set_heartbeat(&mut self, delay: u64) {
+    pub fn set_heartbeat(&mut self, delay: Duration) {
         self.heartbeat_delay = Some(delay);
-        self.update_heartbeat_delay_for_remotes();
-    }
-
-    pub fn set_heartbeat_with(&mut self, milliseconds: u64, tick_interval_milliseconds: u64) {
-        assert!(tick_interval_milliseconds > 0);
-        self.heartbeat_delay = Some(milliseconds / tick_interval_milliseconds);
         self.update_heartbeat_delay_for_remotes();
     }
 
@@ -159,7 +148,7 @@ impl RUdpServer {
             ! v.should_clear()
         });
         for socket in self.remotes.values_mut() {
-            socket.incr_tick();
+            socket.update_cached_now();
         }
         self.process_all_incoming()?;
         for socket in self.remotes.values_mut() {

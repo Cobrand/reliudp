@@ -3,6 +3,7 @@ use crate::fragment_combiner::*;
 use crate::misc::BoxedSlice;
 use std::collections::VecDeque;
 use crate::ack::Acks;
+use std::time::Instant;
 
 #[derive(Debug)]
 pub (crate) enum ReceivedMessage {
@@ -30,37 +31,37 @@ impl UdpPacketHandler {
         }
     }
 
-    pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>, iteration_n: u64) {
+    pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>, now: Instant) {
         match udp_packet.compute_packet() {
             Ok(Packet::Fragment(f)) => {
-                log::trace!("received fragment {:?} at n={}", f, iteration_n);
-                self.fragment_combiner.push(f, iteration_n);
+                log::trace!("received fragment {:?}", f);
+                self.fragment_combiner.push(f, now);
                 if let Some((seq_id, data)) = self.fragment_combiner.next_out_message() {
                     self.out_messages.push_back(ReceivedMessage::Data(seq_id, data));
                 }
             },
             Ok(Packet::Ack(seq_id, data)) => {
-                log::trace!("received ack({}) {:?} at n={}", seq_id, data, iteration_n);
+                log::trace!("received ack({}) {:?}", seq_id, data);
                 self.out_messages.push_back(ReceivedMessage::Ack(seq_id, data));
             },
             Ok(Packet::Heartbeat) => {
-                log::trace!("received heartbeat at n={}", iteration_n);
+                log::trace!("received heartbeat");
                 self.out_messages.push_back(ReceivedMessage::Heartbeat);
             },
             Ok(Packet::Syn) => {
-                log::trace!("received Syn at n={}", iteration_n);
+                log::trace!("received Syn");
                 self.out_messages.push_back(ReceivedMessage::Syn);
             },
             Ok(Packet::SynAck) => {
-                log::trace!("received SynAck at n={}", iteration_n);
+                log::trace!("received SynAck");
                 self.out_messages.push_back(ReceivedMessage::SynAck);
             },
             Ok(Packet::End(last_seq_id)) => {
-                log::trace!("received End({}) at n={}", last_seq_id, iteration_n);
+                log::trace!("received End({})", last_seq_id);
                 self.out_messages.push_back(ReceivedMessage::End(last_seq_id));
             },
             Ok(Packet::Abort(last_seq_id)) => {
-                log::trace!("received Abort({}) at n={}", last_seq_id, iteration_n);
+                log::trace!("received Abort({})", last_seq_id);
                 self.out_messages.push_back(ReceivedMessage::Abort(last_seq_id));
             },
             Err(_) => { /* ignore errors */ }
@@ -69,8 +70,8 @@ impl UdpPacketHandler {
 
     /// Should be called every "tick", whatever you choose your tick to be.
     #[inline]
-    pub (crate) fn tick(&mut self, iteration_n: u64) -> Acks<Box<[u8]>> {
-        self.fragment_combiner.tick(iteration_n)
+    pub (crate) fn tick(&mut self, now: Instant) -> Acks<Box<[u8]>> {
+        self.fragment_combiner.tick(now)
     }
     
     pub (crate) fn next_received_message(&mut self) -> Option<ReceivedMessage> {

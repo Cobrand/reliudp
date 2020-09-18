@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
         }
 
         if let Some(value) = has_finished {
-            if value > 60 {
+            if value > 1000 {
                 break;
             } else {
                 has_finished = Some(value + 1)
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(2));
+        ::std::thread::sleep(::std::time::Duration::from_millis(16));
     }
     println!("Shutting down");
     Ok(())

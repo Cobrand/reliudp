@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(2));
+        ::std::thread::sleep(::std::time::Duration::from_millis(16));
         if received.len() >= 256 {
             println!("Finished! Values in order:");
             print_values(&received);

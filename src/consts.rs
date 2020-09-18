@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 // CRC32 = u32 = 4bytes
 pub (crate) const CRC32_SIZE: usize = 4;
 
@@ -22,7 +24,7 @@ pub (crate) const MAX_UDP_MESSAGE_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYT
 pub (crate) const MAX_FRAGMENTS_IN_MESSAGE: usize = 256;
 
 /// Number of iterations we must wait to send the next ack since the last one.
-pub (crate) const ACK_SEND_INTERVAL: u64 = 5;
+pub (crate) const ACK_SEND_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Number of iterations we must wait to resend a packet since the last one, if we haven't received a ack.
-pub (crate) const PACKET_RESEND_INTERVAL: u64 = ACK_SEND_INTERVAL * 2;
+pub (crate) const DEFAULT_PACKET_RESEND_INTERVAL: Duration = Duration::from_millis(200);
