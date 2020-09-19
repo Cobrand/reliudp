@@ -473,8 +473,9 @@ impl RUdpSocket {
                     }
                 },
                 Some(ReceivedMessage::Syn) => {
-                    log::warn!("received a syn message while already connected {}", self.remote_addr());
-                    /* do nothing for now, but we may want to handle "syn" later to
+                    log::warn!("received a syn message while already connected {}, resending a synack", self.remote_addr());
+                    let _r = self.send_synack();
+                    /* do nothing for special now, but we may want to handle "syn" later to
                     have a 'reconnect' feature or something? */
                 }
             };
