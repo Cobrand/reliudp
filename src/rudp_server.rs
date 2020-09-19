@@ -131,7 +131,7 @@ impl RUdpServer {
     }
 
     /// Send some data to ALL remotes
-    pub fn send_data(&mut self, data: &Arc<[u8]>, message_type: MessageType, message_priority: Option<MessagePriority>) {
+    pub fn send_data(&mut self, data: &Arc<[u8]>, message_type: MessageType, message_priority: MessagePriority) {
         for socket in self.remotes.values_mut() {
             socket.send_data(Arc::clone(data), message_type, message_priority);
         }

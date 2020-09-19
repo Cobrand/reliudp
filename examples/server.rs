@@ -21,9 +21,9 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             let big_message = generate_really_big_message(n);
             println!("Sending (n={:?}) {:?} bytes to all {:?} remotes", n, big_message.as_ref().len(), server.remotes_len());
             if n % 2 == 0 {
-                server.send_data(&big_message, reliudp::MessageType::KeyMessage, None);
+                server.send_data(&big_message, reliudp::MessageType::KeyMessage, Default::default());
             } else {
-                server.send_data(&big_message, reliudp::MessageType::Forgettable, None);
+                server.send_data(&big_message, reliudp::MessageType::Forgettable, Default::default());
             }
             n += 1;
 

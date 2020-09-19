@@ -371,11 +371,11 @@ impl RUdpSocket {
     /// Send data to the remote.
     ///
     /// No message priority = Normal priority.
-    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType, message_priority: Option<MessagePriority>) {
+    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType, message_priority: MessagePriority) {
         if message_type.has_ack() {
             self.ping_handler.ping(self.next_local_seq_id);
         }
-        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, message_priority.unwrap_or_default(), &self.socket);
+        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, message_priority, &self.socket);
         self.next_local_seq_id += 1;
     }
 
