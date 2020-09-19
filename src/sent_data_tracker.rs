@@ -3,7 +3,7 @@ use crate::rudp::UdpSocketWrapper;
 use crate::fragment::{build_fragments_from_bytes, FragmentMeta};
 use crate::udp_packet::UdpPacket;
 use crate::ack::Ack;
-use crate::rudp::MessageType;
+use crate::rudp::{MessageType, MessagePriority};
 use crate::misc::BoxedSlice;
 use std::time::Instant;
 
@@ -46,6 +46,9 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     /// (iteration_n, ack_data)
     pub (self) last_received_ack: Option<(Instant, Ack<BoxedSlice<u8>>)>,
     pub (self) last_sent_packet: Instant,
+    /// (Oldest unanswered ack, Newest unanswered ack)
+    pub (self) unanswered_ack: Option<(Instant, Instant)>,
+    pub (self) message_priority: MessagePriority,
 }
 
 impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
@@ -62,22 +65,35 @@ impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
 }
 
 impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
-    pub fn new(data: D, frag_total: u8, now: Instant, expiration_type: PacketExpiration) -> SentDataSet<D> {
+    pub fn new(data: D, frag_total: u8, now: Instant, expiration_type: PacketExpiration, message_priority: MessagePriority) -> SentDataSet<D> {
         SentDataSet {
             data,
             frag_total,
             expiration_type,
             last_received_ack: None,
             last_sent_packet: now,
+            unanswered_ack: None,
+            message_priority,
         }
     }
 
     /// Returns whether or not all acks have been received by the other party
     pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> bool {
-        if now >= self.last_sent_packet + crate::consts::DEFAULT_PACKET_RESEND_INTERVAL {
+        let resend_delay = self.message_priority.resend_delay();
+        if now >= self.last_sent_packet + resend_delay {
             self.resend_packets(seq_id, now, socket)
         } else {
-            false
+            if let Some((old, new)) = self.unanswered_ack {
+                // if we have received an unanswered ack 66% of resend_delay ago,
+                // OR if we have NOT received an ack for 33% of resend_delay, resend the packets
+                if now >= old + resend_delay * 2 / 3 || now - new >= resend_delay / 3 {
+                    self.resend_packets(seq_id, now, socket)
+                } else {
+                    false
+                }
+            } else {
+                false
+            }
         }
     }
 
@@ -107,6 +123,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                 for frag_id in ack_missing_frags {
                     complete = false;
                     let fragment = &all_fragments[frag_id as usize];
+                    log::trace!("resending seq_id={} frag_id={} because we received incomplete ack", seq_id, frag_id);
                     let _r = socket.send_udp_packet(&UdpPacket::from(fragment));
                     // TODO log the error if any
                 }
@@ -115,6 +132,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
             None => {
                 // no ack has been received, resend everything we have
                 for fragment in fragments {
+                    log::trace!("resending seq_id={} frag_id={} because we received no ack", seq_id, fragment.frag_id);
                     let _r = socket.send_udp_packet(&UdpPacket::from(&fragment));
                     // TODO log the error if any
                 }
@@ -123,6 +141,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                 false
             },
         };
+        self.unanswered_ack = None;
         self.last_sent_packet = now;
         complete
     } 
@@ -140,7 +159,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
     }
 
-    pub fn send_data(&mut self, seq_id: u32, data: D, now: Instant, message_type: MessageType, socket: &UdpSocketWrapper) {
+    pub fn send_data(&mut self, seq_id: u32, data: D, now: Instant, message_type: MessageType, message_priority: MessagePriority, socket: &UdpSocketWrapper) {
         let expiration = PacketExpiration::from_message_type(message_type, now);
         let (fragments, frag_total) = build_fragments_from_bytes(data.as_ref(), seq_id, FragmentMeta::from(expiration)).expect("Your message is too big to be sent via RUDP.");
         for fragment in fragments {
@@ -149,7 +168,7 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         }
 
         if let Some(packet_expiration) = expiration {
-            let sent_data_set = SentDataSet::new(data.clone(), frag_total, now, packet_expiration);
+            let sent_data_set = SentDataSet::new(data.clone(), frag_total, now, packet_expiration, message_priority);
 
             if self.sets.insert(seq_id, sent_data_set).is_some() {
                 panic!("seq_id {:?} is already registered in sent_data_tracker", seq_id);
@@ -161,21 +180,27 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         self.sets.remove(&seq_id);
     }
 
-    pub fn receive_ack(&mut self, seq_id: u32, data: BoxedSlice<u8>, now: Instant, socket: &UdpSocketWrapper) {
-        let remove_ack = if let Some(set) = self.sets.get_mut(&seq_id) {
+    pub fn receive_ack(&mut self, seq_id: u32, data: BoxedSlice<u8>, now: Instant) {
+        if let Some(set) = self.sets.get_mut(&seq_id) {
             let ack = Ack::new(data);
             set.last_received_ack = Some((now, ack));
-            set.resend_packets(seq_id, now, socket)
+            match set.unanswered_ack {
+                Some((old, _)) => {
+                    set.unanswered_ack = Some((old, now))
+                },
+                None => {
+                    set.unanswered_ack = Some((now, now))
+                }
+            };
         } else {
             // couldn't find the matching fragment set... 2 possibilities:
             // * The remote lied, we never had such a seq_id
             // * We dropped the message on our end, so we can't even try to recover it 
             // in either case, the only thing we can do is to drop the ack and give up on life.
-            true
         };
-        if remove_ack {
-            self.remove_seq_id(seq_id);
-        }
+        // if remove_ack {
+        //     self.remove_seq_id(seq_id);
+        // }
     }
 
     /// Clears data that is too old to be stored here (acks missing a part taht are too old, ...)

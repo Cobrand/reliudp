@@ -25,6 +25,3 @@ pub (crate) const MAX_FRAGMENTS_IN_MESSAGE: usize = 256;
 
 /// Number of iterations we must wait to send the next ack since the last one.
 pub (crate) const ACK_SEND_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Number of iterations we must wait to resend a packet since the last one, if we haven't received a ack.
-pub (crate) const DEFAULT_PACKET_RESEND_INTERVAL: Duration = Duration::from_millis(200);

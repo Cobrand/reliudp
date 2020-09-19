@@ -35,7 +35,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
 
         if can_start && has_finished.is_none() {
             let big_message = generate_really_big_message(n);
-            server.send_data(&big_message, reliudp::MessageType::KeyMessage);
+            server.send_data(&big_message, reliudp::MessageType::KeyMessage, Some(reliudp::MessagePriority::Normal));
 
             if n % 100 == 0 {
                 for (address, socket) in server.iter() {

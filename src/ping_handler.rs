@@ -24,8 +24,8 @@ impl PingHandler {
             (now - time).as_secs()
         });
         if let Some(delta_sec) = delta_sec {
-            if delta_sec >= 10 {
-                // if we haven't received an answer to our ping after 10s, we'll assume he never
+            if delta_sec >= 5 {
+                // if we haven't received an answer to our ping after 5s, we'll assume he never
                 // received it and we will send another one
                 self.waiting_ping = None;
             } else {
@@ -45,8 +45,8 @@ impl PingHandler {
                 let d = Instant::now() - time;
                 let ms = d.subsec_millis();
                 let secs = d.as_secs();
-                let ping_ms = if secs >= 10 {
-                    9999u32
+                let ping_ms = if secs >= 5 {
+                    4999u32
                 } else {
                     ms + (secs as u32) * 1000
                 };

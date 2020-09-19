@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
         }
         
         if !sent_message {
-            client.send_data(Arc::clone(&really_big_message), reliudp::MessageType::KeyMessage);
+            client.send_data(Arc::clone(&really_big_message), reliudp::MessageType::KeyMessage, None);
             sent_message = true;
         }
 

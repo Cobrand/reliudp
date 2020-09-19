@@ -38,6 +38,43 @@ impl ::std::fmt::Debug for SocketEvent {
     }
 }
 
+/// Represents how often the message will get sent without ACK.
+///
+/// A high priority message will be sent very often until we get a successful ack,
+/// while a low priority will often wait for the other party to send an ack to send the appropriate data.
+#[derive(Debug, Copy, Clone)]
+pub enum MessagePriority {
+    Lowest,
+    VeryLow,
+    Low,
+    Normal,
+    High,
+    VeryHigh,
+    Highest,
+    Custom { resend_delay: Duration }
+}
+
+impl Default for MessagePriority {
+    fn default() -> Self {
+        MessagePriority::Normal
+    }
+}
+
+impl MessagePriority {
+    pub fn resend_delay(&self) -> Duration {
+        match self {
+            MessagePriority::Highest => Duration::from_millis(20),
+            MessagePriority::VeryHigh => Duration::from_millis(40),
+            MessagePriority::High => Duration::from_millis(80),
+            MessagePriority::Normal => Duration::from_millis(160),
+            MessagePriority::Low => Duration::from_millis(320),
+            MessagePriority::VeryLow => Duration::from_millis(640),
+            MessagePriority::Lowest => Duration::from_millis(1500),
+            MessagePriority::Custom { resend_delay } => *resend_delay,
+        }
+    }
+}
+
 /// Represents the type of message you are able to send (key, forgettable, ...)
 #[derive(Debug, Copy, Clone)]
 pub enum MessageType {
@@ -332,11 +369,13 @@ impl RUdpSocket {
     
     #[inline]
     /// Send data to the remote.
-    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType) {
+    ///
+    /// No message priority = Normal priority.
+    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType, message_priority: Option<MessagePriority>) {
         if message_type.has_ack() {
             self.ping_handler.ping(self.next_local_seq_id);
         }
-        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, &self.socket);
+        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, message_priority.unwrap_or_default(), &self.socket);
         self.next_local_seq_id += 1;
     }
 
@@ -413,7 +452,7 @@ impl RUdpSocket {
                 },
                 Some(ReceivedMessage::Ack(seq_id, data)) => {
                     self.ping_handler.pong(seq_id);
-                    self.sent_data_tracker.receive_ack(seq_id, data, self.cached_now, &self.socket);
+                    self.sent_data_tracker.receive_ack(seq_id, data, self.cached_now);
                 },
                 Some(ReceivedMessage::Data(_id, data)) => {
                     log::trace!("received data {:?} from remote {}", data, self.socket.remote_addr);
