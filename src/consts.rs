@@ -24,4 +24,4 @@ pub (crate) const MAX_UDP_MESSAGE_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYT
 pub (crate) const MAX_FRAGMENTS_IN_MESSAGE: usize = 256;
 
 /// Number of iterations we must wait to send the next ack since the last one.
-pub (crate) const ACK_SEND_INTERVAL: Duration = Duration::from_millis(100);
+pub (crate) const ACK_SEND_INTERVAL: Duration = Duration::from_millis(50);

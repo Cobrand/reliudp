@@ -16,7 +16,8 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
     let mut client = reliudp::RUdpSocket::connect((ip, 61243)).expect("Failed to create client");
 
     let mut received: Vec<u8> = vec!();
-    for i in 0..2000 {
+    let mut finished = false;
+    for i in 0..5000 {
         client.next_tick()?;
         // if i % 10 == 0 { dbg!(client.status()); }
         for client_event in client.drain_events() {
@@ -33,22 +34,24 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(16));
-        if received.len() >= 256 {
+        ::std::thread::sleep(::std::time::Duration::from_millis(50));
+        if received.len() >= 128 && !finished {
             println!("Finished! Values in order:");
             print_values(&received);
-            return Ok(());
+            finished = true;
         }
     }
-    println!("Not Finished... Values in order:");
-    print_values(&received);
-    println!();
-    print!("Missing values:");
-    for v in 0..=0xFF {
-        if !received.contains(&v) {
-            print!("{:>3} ", v);
+    if !finished {
+        println!("Not Finished... Values in order:");
+        print_values(&received);
+        println!();
+        print!("Missing values:");
+        for v in 0..=0xFF {
+            if !received.contains(&v) {
+                print!("{:>3} ", v);
+            }
         }
+        println!();
     }
-    println!();
     Ok(())
 }

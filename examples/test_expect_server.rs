@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 fn generate_really_big_message(i: u8) -> Arc<[u8]> {
-    let really_big_message: Vec<u8> = (0..2000).map(|_v| i).collect();
+    let really_big_message: Vec<u8> = (0..50).map(|_v| i).collect();
     let really_big_message: Arc<[u8]> = Arc::from(really_big_message.into_boxed_slice());
     really_big_message
 }
@@ -26,7 +26,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
         }
 
         if let Some(value) = has_finished {
-            if value > 1000 {
+            if value > 2000 {
                 break;
             } else {
                 has_finished = Some(value + 1)
@@ -43,7 +43,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
                 }
             }
 
-            if n < 255 {
+            if n < 127 {
                 n += 1;
             } else {
                 println!("Finished sending data!");
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
             }
         }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(16));
+        ::std::thread::sleep(::std::time::Duration::from_millis(50));
     }
     println!("Shutting down");
     Ok(())

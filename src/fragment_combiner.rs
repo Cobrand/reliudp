@@ -216,7 +216,7 @@ impl<B: FragmentDataRef> FragmentCombiner<B> {
                 acks_to_remove.push(*seq_id);
                 continue;
             }
-            let should_send_ack: bool = if fragment_set.can_send_ack() && fragment_set.acks_sent_count < 5 {
+            let should_send_ack: bool = if fragment_set.can_send_ack() && fragment_set.acks_sent_count < 2 {
                 match fragment_set.last_sent_ack {
                     Some(last_iter) => {
                         debug_assert!(now > last_iter);

@@ -84,9 +84,9 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
             self.resend_packets(seq_id, now, socket)
         } else {
             if let Some((old, new)) = self.unanswered_ack {
-                // if we have received an unanswered ack 66% of resend_delay ago,
-                // OR if we have NOT received an ack for 33% of resend_delay, resend the packets
-                if now >= old + resend_delay * 2 / 3 || now - new >= resend_delay / 3 {
+                // if we have received an unanswered ack 80% of resend_delay ago,
+                // OR if we have NOT received an ack for 60% of resend_delay, resend the packets
+                if now >= old + resend_delay * 4 / 5 || now - new >= resend_delay * 3 / 5 {
                     self.resend_packets(seq_id, now, socket)
                 } else {
                     false
