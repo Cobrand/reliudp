@@ -1,4 +1,4 @@
-use reliudp::SocketEvent;
+use reliudp::{SocketEvent, MessageType};
 
 fn print_values(received: &[u8]) {
     let chunks = received.chunks(16);
@@ -17,9 +17,15 @@ fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
 
     let mut received: Vec<u8> = vec!();
     let mut finished = false;
+
+    let message_seq_id = client.send_data(std::sync::Arc::new([0; 15]), MessageType::KeyMessage, Default::default());
+
     for i in 0..5000 {
         client.next_tick()?;
-        // if i % 10 == 0 { dbg!(client.status()); }
+        if i % 10 == 0 { 
+            dbg!(client.status());
+            println!("seq_id {} received? {:?}", message_seq_id, client.is_seq_id_received(message_seq_id));
+        }
         for client_event in client.drain_events() {
             if let SocketEvent::Data(d) = client_event {
                 let v = d.as_ref().get(0).unwrap();

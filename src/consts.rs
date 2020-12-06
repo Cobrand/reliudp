@@ -20,6 +20,8 @@ pub (crate) const FRAG_DATA_START_BYTE: usize = PACKET_DATA_START_BYTE + FRAG_AD
 // Although we arguably could do better. Needs tweaking & testing if changed to a higher value.
 pub (crate) const MAX_UDP_MESSAGE_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYTE;
 
+pub (crate) const SEQ_DATA_CLEANUP_DELAY: std::time::Duration = std::time::Duration::from_millis(5000);
+
 // Since the frag_id max is 255, we can have at most 256 frags in a message.
 pub (crate) const MAX_FRAGMENTS_IN_MESSAGE: usize = 256;
 

@@ -5,6 +5,7 @@ use crate::udp_packet::UdpPacket;
 use crate::ack::Ack;
 use crate::rudp::{MessageType, MessagePriority};
 use crate::misc::BoxedSlice;
+use crate::consts::SEQ_DATA_CLEANUP_DELAY;
 use std::time::Instant;
 
 use hex::encode as hex_encode;
@@ -46,6 +47,8 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     /// (iteration_n, ack_data)
     pub (self) last_received_ack: Option<(Instant, Ack<BoxedSlice<u8>>)>,
     pub (self) last_sent_packet: Instant,
+
+    pub (self) complete_since: Option<Instant>,
     /// (Oldest unanswered ack, Newest unanswered ack)
     pub (self) unanswered_ack: Option<(Instant, Instant)>,
     pub (self) message_priority: MessagePriority,
@@ -73,12 +76,16 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
             last_received_ack: None,
             last_sent_packet: now,
             unanswered_ack: None,
+            complete_since: None,
             message_priority,
         }
     }
 
-    /// Returns whether or not all acks have been received by the other party
-    pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> bool {
+    /// Returns since when the remote party has received all acks.
+    ///
+    /// None means the remote has not received the message yet (as of what we know)
+    /// Some(instant) is the time when the first complete ack has been received
+    pub (self) fn attempt_resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> Option<Instant> {
         let resend_delay = self.message_priority.resend_delay();
         if now >= self.last_sent_packet + resend_delay {
             self.resend_packets(seq_id, now, socket)
@@ -89,10 +96,10 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                 if now >= old + resend_delay * 4 / 5 || now - new >= resend_delay * 3 / 5 {
                     self.resend_packets(seq_id, now, socket)
                 } else {
-                    false
+                    None
                 }
             } else {
-                false
+                None
             }
         }
     }
@@ -107,11 +114,13 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
     }
 
     /// Returns whether or not all acks have been received by the other party
-    pub (self) fn resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> bool {
+    pub (self) fn resend_packets(&mut self, seq_id: u32, now: Instant, socket: &UdpSocketWrapper) -> Option<Instant> {
         let frag_meta = FragmentMeta::from(Some(self.expiration_type));
         let (fragments, frag_total) = build_fragments_from_bytes(self.data.as_ref(), seq_id, frag_meta).expect("Unreachable: message has been sent once but couldn't be resent because too big");
-        let complete = match &self.last_received_ack {
-            Some((_ack_iteration_n, ack)) => {
+        
+        let mut last_complete_ack: Option<Instant> = None;
+        match &self.last_received_ack {
+            Some((ack_received_instant, ack)) => {
                 let all_fragments: Vec<_> = fragments.collect();
                 debug_assert!(! all_fragments.is_empty());
                 debug_assert_eq!((all_fragments.len() - 1) as u8, self.frag_total);
@@ -127,7 +136,9 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                     let _r = socket.send_udp_packet(&UdpPacket::from(fragment));
                     // TODO log the error if any
                 }
-                complete
+                if complete {
+                    last_complete_ack = Some(*ack_received_instant);
+                }
             },
             None => {
                 // no ack has been received, resend everything we have
@@ -137,13 +148,12 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataSet<D> {
                     // TODO log the error if any
                 }
 
-                // obviously no acks have been received, so this set can't be complete
-                false
+                // obviously no acks have been received, so this set can't be complete, so don't set "last_received_ack"
             },
         };
         self.unanswered_ack = None;
         self.last_sent_packet = now;
-        complete
+        last_complete_ack
     } 
 }
 
@@ -180,6 +190,13 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
         self.sets.remove(&seq_id);
     }
 
+    pub fn is_seq_id_received(&self, seq_id: u32) -> Result<bool, ()> {
+        match self.sets.get(&seq_id) {
+            None => Err(()),
+            Some(set) => Ok(set.complete_since.is_some())
+        }
+    }
+
     pub fn receive_ack(&mut self, seq_id: u32, data: BoxedSlice<u8>, now: Instant) {
         if let Some(set) = self.sets.get_mut(&seq_id) {
             let ack = Ack::new(data);
@@ -211,9 +228,16 @@ impl<D: AsRef<[u8]> + 'static + Clone> SentDataTracker<D> {
                 entries_to_remove.push(*seq_id);
                 continue;
             }
-            let ack_received = set.attempt_resend_packets(*seq_id, now, socket);
-            if ack_received {
-                entries_to_remove.push(*seq_id);
+            if let Some(complete_time) = set.complete_since {
+                let delta = now - complete_time;
+                if delta >= SEQ_DATA_CLEANUP_DELAY {
+                    entries_to_remove.push(*seq_id);
+                }
+            } else {
+                let ack_received = set.attempt_resend_packets(*seq_id, now, socket);
+                if let Some(ack_received) = ack_received {
+                    set.complete_since = Some(ack_received);
+                }
             }
         }
         for seq_id in entries_to_remove {

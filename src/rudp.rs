@@ -370,13 +370,24 @@ impl RUdpSocket {
     #[inline]
     /// Send data to the remote.
     ///
-    /// No message priority = Normal priority.
-    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType, message_priority: MessagePriority) {
+    /// Returns the sequence_id of the message sent. This may be useful to track whether or not the message has been received.
+    pub fn send_data(&mut self, data: Arc<[u8]>, message_type: MessageType, message_priority: MessagePriority) -> u32 {
         if message_type.has_ack() {
             self.ping_handler.ping(self.next_local_seq_id);
         }
-        self.sent_data_tracker.send_data(self.next_local_seq_id, data, self.cached_now, message_type, message_priority, &self.socket);
+        let seq_id = self.next_local_seq_id;
         self.next_local_seq_id += 1;
+        self.sent_data_tracker.send_data(seq_id, data, self.cached_now, message_type, message_priority, &self.socket);
+        seq_id
+    }
+
+    /// Returns whether or not the seq_id has been received by the remote.
+    ///
+    /// Ok(true) = has been received
+    /// Ok(false) = has not been received yet
+    /// Err(()) = invalid u32 OR message was sent a long time ago
+    pub fn is_seq_id_received(&self, seq_id: u32) -> Result<bool, ()> {
+        self.sent_data_tracker.is_seq_id_received(seq_id)
     }
 
     fn send_udp_packet<P: AsRef<[u8]>>(&mut self, udp_packet: &UdpPacket<P>) -> std::io::Result<()> {
