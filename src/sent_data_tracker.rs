@@ -1,4 +1,4 @@
-use fnv::FnvHashMap as HashMap;
+use hashbrown::HashMap;
 use crate::rudp::UdpSocketWrapper;
 use crate::fragment::{build_fragments_from_bytes, FragmentMeta};
 use crate::udp_packet::UdpPacket;

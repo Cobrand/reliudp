@@ -4,7 +4,7 @@
 //! 
 //! ## Server
 //!
-//! ```rust,no-run
+//! ```rust,no_run
 //! extern crate reliudp;
 //! use std::sync::Arc;
 //! 
@@ -28,9 +28,9 @@
 //!             let big_message = generate_really_big_message(n);
 //!             println!("Sending (n={:?}) {:?} bytes to all {:?} remotes", n, big_message.as_ref().len(), server.remotes_len());
 //!             if n % 2 == 0 {
-//!                 server.send_data(&big_message, reliudp::MessageType::KeyMessage);
+//!                 server.send_data(&big_message, reliudp::MessageType::KeyMessage, Default::default());
 //!             } else {
-//!                 server.send_data(&big_message, reliudp::MessageType::Forgettable);
+//!                 server.send_data(&big_message, reliudp::MessageType::Forgettable, Default::default());
 //!             }
 //!             n += 1;
 //!         }
@@ -43,12 +43,12 @@
 //!
 //! ## Client
 //!
-//! ```rust,no-run
+//! ```rust,no_run
 //! extern crate reliudp;
 //! use reliudp::SocketEvent;
 //! 
 //! fn main() -> Result<(), Box<::std::error::Error>> {
-//!     let mut client = reliudp::RUdpSocket::connect("91.121.135.70:61244").expect("Failed to create client");
+//!     let mut client = reliudp::RUdpSocket::connect("127.0.0.1:61244").expect("Failed to create client");
 //!     for i in 0.. {
 //!         client.next_tick()?;
 //!         for client_event in client.drain_events() {

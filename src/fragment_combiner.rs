@@ -1,4 +1,4 @@
-use fnv::FnvHashMap as HashMap;
+use hashbrown::HashMap;
 use std::collections::VecDeque;
 use itertools::Itertools;
 use crate::ack::{Acks, Ack};

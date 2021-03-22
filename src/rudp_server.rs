@@ -5,8 +5,7 @@ use std::sync::Arc;
 use crate::udp_packet::UdpPacket;
 use std::time::Duration;
 
-use std::collections::hash_map::Entry;
-use fnv::{FnvHashMap as HashMap};
+use hashbrown::{HashMap, hash_map::Entry};
 use crate::rudp::MessageType;
 use std::ops::{Index, IndexMut};
 
