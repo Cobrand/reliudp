@@ -3,7 +3,13 @@ use crate::consts::*;
 use crate::fragment::*;
 use crate::misc::*;
 
-use crc::crc32::checksum_ieee as crc32_check;
+use crc32fast::Hasher;
+
+fn crc32_hash(bytes: &[u8]) -> u32 {
+    let mut h = Hasher::new();
+    h.update(bytes);
+    h.finalize()
+}
 
 #[derive(Debug, PartialEq)]
 pub (crate) enum Packet<P: AsRef<[u8]>> {
@@ -185,10 +191,18 @@ pub struct UdpPacket<B: AsRef<[u8]>> {
    pub (crate) buffer: B
 }
 
+#[cfg(feature = "extended_debug")]
 impl<B: AsRef<[u8]>> ::std::fmt::Debug for UdpPacket<B> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         let data = hex::encode(&self.buffer);
         write!(f, "UdpPacket [hex 0x{}]", data)
+    }
+}
+
+#[cfg(not(feature = "extended_debug"))]
+impl<B: AsRef<[u8]>> ::std::fmt::Debug for UdpPacket<B> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        write!(f, "UdpPacket [{} bytes]", self.buffer.as_ref().len())
     }
 }
 
@@ -221,7 +235,7 @@ impl<'a, T: AsRef<[u8]>> From<&'a Packet<T>> for UdpPacket<Box<[u8]>> {
         bytes_mut[8] = frag_id;
         bytes_mut[9] = frag_total;
         p.write_payload(&mut bytes_mut[10..]);
-        let generated_crc: u32 = crc32_check(&bytes_mut[4..]);
+        let generated_crc: u32 = crc32_hash(&bytes_mut[4..]);
         BigEndian::write_u32(&mut bytes_mut[0..4], generated_crc);
         UdpPacket {buffer: bytes_mut.into_boxed_slice()}
     }
@@ -234,7 +248,7 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
             return Err(UdpPacketError::NotBigEnough);
         }
         let message_crc32: u32 = BigEndian::read_u32(&buffer[0..4]);
-        let computed_crc32 = crc32_check(&buffer[4..]);
+        let computed_crc32 = crc32_hash(&buffer[4..]);
         if computed_crc32 != message_crc32 {
             Err(UdpPacketError::InvalidCrc)
         } else {
@@ -275,7 +289,7 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
         let frag_id: u8 = buffer[8];
         let seq_id: u32 = BigEndian::read_u32(&buffer[4..8]);
         let message_crc32: u32 = BigEndian::read_u32(&buffer[0..4]);
-        let computed_crc32 = crc32_check(&buffer[4..]);
+        let computed_crc32 = crc32_hash(&buffer[4..]);
         if computed_crc32 != message_crc32 {
             return Err(UdpPacketError::InvalidCrc)
         }

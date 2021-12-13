@@ -8,6 +8,7 @@ use crate::misc::BoxedSlice;
 use crate::consts::SEQ_DATA_CLEANUP_DELAY;
 use std::time::Instant;
 
+#[cfg(feature = "extended_debug")]
 use hex::encode as hex_encode;
 
 #[derive(Debug, Clone, Copy)]
@@ -54,6 +55,7 @@ pub (self) struct SentDataSet<D: AsRef<[u8]> + 'static + Clone> {
     pub (self) message_priority: MessagePriority,
 }
 
+#[cfg(feature = "extended_debug")]
 impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
         let data = hex_encode(&self.data);
@@ -63,6 +65,20 @@ impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
             self.last_received_ack,
             self.last_sent_packet,
             data
+        )
+    }
+}
+
+#[cfg(not(feature = "extended_debug"))]
+impl<D: AsRef<[u8]> + 'static + Clone> ::std::fmt::Debug for SentDataSet<D> {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        let len = self.data.as_ref().len();
+        write!(f, "SentDataSet {{ frag_total: {}, expiration_type: {:?}, last_received_ack: {:?}, last_sent_packet: {:?}, data: {} bytes }}",
+            self.frag_total,
+            self.expiration_type,
+            self.last_received_ack,
+            self.last_sent_packet,
+            len
         )
     }
 }
