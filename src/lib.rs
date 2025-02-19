@@ -5,7 +5,6 @@
 //! ## Server
 //!
 //! ```rust,no_run
-//! extern crate reliudp;
 //! use std::sync::Arc;
 //! 
 //! fn generate_really_big_message(i: u8) -> Arc<[u8]> {

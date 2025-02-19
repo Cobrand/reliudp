@@ -1,4 +1,3 @@
-extern crate reliudp;
 use reliudp::SocketEvent;
 
 fn main() -> Result<(), Box<dyn (::std::error::Error)>> {

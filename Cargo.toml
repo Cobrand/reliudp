@@ -2,7 +2,7 @@
 authors = ["Cobrand <cobrandw@gmail.com>"]
 name = "reliudp"
 version = "0.3.0"
-edition = "2018"
+edition = "2021"
 
 description = "A custom Reliable UDP protocol for Rust"
 license = "MIT"
