@@ -22,7 +22,7 @@ pub (crate) enum ReceivedMessage {
 pub (crate) struct UdpPacketHandler {
     fragment_combiner: FragmentCombiner<BoxedSlice<u8>>,
     
-    out_messages: VecDeque<ReceivedMessage>,
+    pub (crate) out_messages: VecDeque<ReceivedMessage>,
 }
 
 impl UdpPacketHandler {
@@ -33,6 +33,7 @@ impl UdpPacketHandler {
         }
     }
 
+    // add packet from the expected source
     pub (crate) fn add_received_packet(&mut self, udp_packet: UdpPacket<Box<[u8]>>, now: Instant) {
         match udp_packet.compute_packet() {
             Ok(Packet::Fragment(f)) => {

@@ -18,7 +18,8 @@ pub (crate) const FRAG_DATA_START_BYTE: usize = PACKET_DATA_START_BYTE + FRAG_AD
 // We need to take into account ipv4 headers (max of 60bytes) and udp headers (8 bytes)
 // 1152 + 60 + 8 = 1220 is not too bad, because the "common" MTU for ipv6 is 1280.
 // Although we arguably could do better. Needs tweaking & testing if changed to a higher value.
-pub (crate) const MAX_UDP_MESSAGE_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYTE;
+pub (crate) const MAX_SENT_UDP_DATA_SIZE: usize = 1024 + 128 + FRAG_DATA_START_BYTE;
+pub (crate) const MAX_RCV_UDP_DATA_SIZE: usize = 1400;
 
 pub (crate) const SEQ_DATA_CLEANUP_DELAY: std::time::Duration = std::time::Duration::from_millis(5000);
 

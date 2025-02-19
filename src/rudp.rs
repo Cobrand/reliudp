@@ -199,12 +199,18 @@ pub struct RUdpSocket {
 
     /// required before we send a sample "heartbeat" message to avoid timeouts.
     pub (self) heartbeat_delay: Duration,
+
+    // unused when in server mode
+    pub (crate) unknown_messages: VecDeque<(SocketAddr, Box<[u8]>)>,
 }
 
 #[derive(Debug)]
 pub (crate) enum RUdpCreateError {
     IoError(IoError),
-    UnexpectedData,
+    /// data that is understood by this crate, but wasn't epxected at this time
+    NotSyn,
+    /// data that was not understood by this crate
+    RawData(Box<[u8]>),
 }
 
 impl From<IoError> for RUdpCreateError {
@@ -295,6 +301,7 @@ impl RUdpSocket {
             last_sent_message: now,
             timeout_delay: DEFAULT_TIMEOUT_DELAY,
             heartbeat_delay: DEFAULT_HEARTBEAT_DELAY,
+            unknown_messages: Default::default(),
         };
         log::info!("trying to connect to remote {}...", rudp_socket.remote_addr());
         rudp_socket.send_syn()?;
@@ -303,31 +310,39 @@ impl RUdpSocket {
     }
 
     pub (crate) fn new_incoming(udp_socket: Arc<UdpSocket>, incoming_packet: UdpPacket<Box<[u8]>>, incoming_address: SocketAddr) -> Result<RUdpSocket, RUdpCreateError> {
-        if let Ok(Packet::Syn) = incoming_packet.compute_packet() {
-            let local_addr = udp_socket.local_addr()?;
-            let now = Instant::now();
-            let mut rudp_socket = RUdpSocket {
-                socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynReceived, incoming_address),
-                local_addr,
-                packet_handler: UdpPacketHandler::new(),
-                sent_data_tracker: SentDataTracker::new(),
-                // last_remote_seq_id: 0,
-                events: Default::default(),
-                next_local_seq_id: 0,
-                ping_handler: PingHandler::new(),
-                cached_now: now,
-                last_received_message: now,
-                last_sent_message: now,
-                timeout_delay: DEFAULT_TIMEOUT_DELAY,
-                heartbeat_delay: DEFAULT_HEARTBEAT_DELAY,
-            };
-            rudp_socket.send_synack()?;
-            log::info!("received incoming connection from {}", rudp_socket.remote_addr());
+        match incoming_packet.compute_packet() {
+            Ok(Packet::Syn) => {
+                let local_addr = udp_socket.local_addr()?;
+                let now = Instant::now();
+                let mut rudp_socket = RUdpSocket {
+                    socket: UdpSocketWrapper::new(udp_socket, SocketStatus::SynReceived, incoming_address),
+                    local_addr,
+                    packet_handler: UdpPacketHandler::new(),
+                    sent_data_tracker: SentDataTracker::new(),
+                    // last_remote_seq_id: 0,
+                    events: Default::default(),
+                    next_local_seq_id: 0,
+                    ping_handler: PingHandler::new(),
+                    cached_now: now,
+                    last_received_message: now,
+                    last_sent_message: now,
+                    timeout_delay: DEFAULT_TIMEOUT_DELAY,
+                    heartbeat_delay: DEFAULT_HEARTBEAT_DELAY,
+                    unknown_messages: Default::default(),
+                };
+                rudp_socket.send_synack()?;
+                log::info!("received incoming connection from {}", rudp_socket.remote_addr());
 
-            Ok(rudp_socket)
-        } else {
-            // reject everything that is not a Syn packet.
-            Err(RUdpCreateError::UnexpectedData)
+                Ok(rudp_socket)
+            },
+            Ok(_) => {
+                /* understood the message, but it was not a syn packet */
+                Err(RUdpCreateError::NotSyn)
+            }
+            Err((_, data)) => {
+                /* reject everything that is not a syn packet */
+                Err(RUdpCreateError::RawData(data.buffer))
+            },
         }
     }
 
@@ -352,6 +367,11 @@ impl RUdpSocket {
     /// for how to use it.
     pub fn drain_events<'a>(&'a mut self) -> impl Iterator<Item=SocketEvent> + 'a {
         self.events.drain(..)
+    }
+
+    /// Drain raw messages from unknown remotes
+    pub fn drain_unknown<'a>(&'a mut self) -> impl Iterator<Item=(SocketAddr, Box<[u8]>)> + use<'a> {
+        self.unknown_messages.drain(..)
     }
 
     #[inline]
@@ -564,8 +584,8 @@ impl RUdpSocket {
                     if remote_addr == self.socket.remote_addr {
                         self.add_received_packet(packet);
                     } else {
-                        log::trace!("received unexpected UDP data from someone which was not remote server {}", remote_addr);
                         /* received packet from unknown source */
+                        self.unknown_messages.push_back((remote_addr, packet.buffer));
                     }
                 },
                 Err(err) => {

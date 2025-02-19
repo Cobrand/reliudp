@@ -22,6 +22,7 @@ use std::ops::{Index, IndexMut};
 pub struct RUdpServer {
     pub (crate) remotes: HashMap<SocketAddr, RUdpSocket>,
     pub (crate) udp_socket: Arc<UdpSocket>,
+    pub (crate) unknown_messages: std::collections::VecDeque<(Box<[u8]>, SocketAddr)>,
     pub (self) timeout_delay: Option<Duration>,
     pub (self) heartbeat_delay: Option<Duration>,
 }
@@ -39,6 +40,7 @@ impl RUdpServer {
             udp_socket,
             timeout_delay: None,
             heartbeat_delay: None,
+            unknown_messages: Default::default(),
         })
     }
 
@@ -84,9 +86,13 @@ impl RUdpServer {
                 // buffer len is used for debug/log purposes
                 match RUdpSocket::new_incoming(self.udp_socket.clone(), udp_packet, remote_addr) {
                     Err(RUdpCreateError::IoError(io_error)) => return Err(io_error),
-                    Err(RUdpCreateError::UnexpectedData) => {
-                        /* ignore unexpected data */
-                        log::trace!("received unexpected UDP data from unknown remote {}", remote_addr);
+                    Err(RUdpCreateError::NotSyn) => {
+                        log::trace!("received unexpected message from unknown remote {}", remote_addr);
+                        /* ignore */
+                    },
+                    Err(RUdpCreateError::RawData(data)) => {
+                        log::trace!("received raw UDP msg from unknown remote {}", remote_addr);
+                        self.unknown_messages.push_front((data, remote_addr));
                     },
                     Ok(mut rudp_socket) => {
                         if let Some(delay) = self.timeout_delay {
@@ -178,11 +184,13 @@ impl RUdpServer {
         self.remotes.get_mut(&socket_addr)
     }
 
-    /// Returns an iterator that drain events for all remotes.
+    /// Returns an iterator that drain events for all known remotes, and also unknown remotes.
     pub fn drain_events<'a>(&'a mut self) -> impl 'a + Iterator<Item=(SocketAddr, SocketEvent)> {
         self.remotes.iter_mut().flat_map(|(addr, socket)| {
             socket.drain_events().map(move |event| (*addr, event) )
-        })
+        }).chain(self.unknown_messages.drain(..).map(|(data, addr)| {
+            (addr, SocketEvent::Raw(data))
+        }))
     }
 }
 

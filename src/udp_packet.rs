@@ -266,8 +266,8 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
     /// Proper parameters that you see fit must have been set on UdpSocket. For instance,
     /// it may be wise to set this udp socket as non-blocking  if you don't want to block
     /// your thread forever trying to read one message.
-    pub fn from_udp_socket(udp_socket: &::std::net::UdpSocket) -> ::std::io::Result<(UdpPacket<Box<[u8]>>, ::std::net::SocketAddr)> {
-        let mut buffer = vec!(0; MAX_UDP_MESSAGE_SIZE);
+    pub fn from_udp_socket(udp_socket: &::std::net::UdpSocket) -> ::std::io::Result<(UdpPacket<Box<[u8]>>, std::net::SocketAddr)> {
+        let mut buffer = vec!(0; MAX_RCV_UDP_DATA_SIZE);
         let (message_size, socket_addr) = udp_socket.recv_from(buffer.as_mut_slice())?;
         buffer.truncate(message_size);
         let udp_message = UdpPacket {buffer: buffer.into_boxed_slice()};

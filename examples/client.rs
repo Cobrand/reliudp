@@ -12,8 +12,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Client: Incoming event {:?} at frame {:?}", client_event, i);
             }
         }
+        for (remote, data) in client.drain_unknown() {
+            println!("Client: message from unknown remote {}: '{}'", remote, String::from_utf8_lossy(&data));
+        }
         
-        ::std::thread::sleep(::std::time::Duration::from_millis(5));
+        std::thread::sleep(::std::time::Duration::from_millis(5));
     }
     Ok(())
 }

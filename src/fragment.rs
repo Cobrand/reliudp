@@ -1,7 +1,7 @@
 use crate::consts::*;
 use crate::fragment_generator::FragmentGenerator;
 
-const MAX_FRAGMENT_MESSAGE_SIZE: usize = MAX_UDP_MESSAGE_SIZE - FRAG_DATA_START_BYTE;
+const MAX_FRAGMENT_MESSAGE_SIZE: usize = MAX_SENT_UDP_DATA_SIZE - FRAG_DATA_START_BYTE;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
