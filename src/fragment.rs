@@ -1,4 +1,3 @@
-use crate::misc::ClonableIterator;
 use crate::consts::*;
 use crate::fragment_generator::FragmentGenerator;
 
@@ -147,7 +146,7 @@ fn build_data_from_fragments_fail_duplicate_frag_id() {
     assert_eq!(e, ());
 }
 
-pub (crate) fn build_fragments_from_bytes<'a>(data: &'a [u8], seq_id: u32, frag_meta: FragmentMeta) -> Result<(Box<dyn 'a + ClonableIterator<Item = Fragment<&'a [u8]>>>, u8), ()> {
+pub (crate) fn build_fragments_from_bytes<'a>(data: &'a [u8], seq_id: u32, frag_meta: FragmentMeta) -> Result<(Box<dyn 'a + Iterator<Item = Fragment<&'a [u8]>>>, u8), ()> {
     if data.is_empty() {
         panic!("build_fragments_from_data cannot build fragments if the message is empty");
     }

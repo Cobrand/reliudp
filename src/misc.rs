@@ -1,14 +1,4 @@
-pub (crate) trait ClonableIterator<'a>: Iterator {
-    fn clone_box(&self) -> Box<dyn ClonableIterator<'a, Item = Self::Item> + 'a>;
-}
-
 pub (crate) type BoxedSlice<T> = OwnedSlice<T, Box<[T]>>;
-
-impl<'a, T: Clone + Iterator + 'a> ClonableIterator<'a> for T {
-    fn clone_box(&self) -> Box<dyn ClonableIterator<'a, Item = Self::Item> + 'a> {
-        Box::new(self.clone())
-    }
-}
 
 /// An Owned Slice
 pub (crate) struct OwnedSlice<T, D: AsRef<[T]> + 'static> {
