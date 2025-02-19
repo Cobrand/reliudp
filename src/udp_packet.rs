@@ -324,10 +324,22 @@ impl<B: AsRef<[u8]>> UdpPacket<B> {
 }
 
 impl<D: AsRef<[u8]> + 'static> UdpPacket<D> {
-    pub (crate) fn compute_packet(self) -> Result<Packet<OwnedSlice<u8, D>>, UdpPacketError> {
-        let packet_meta = self.compute_packet_meta()?;
-        Ok(packet_meta.build_packet_with(OwnedSlice::new(self.buffer, PACKET_DATA_START_BYTE)))
+    pub (crate) fn compute_packet(self) -> Result<Packet<OwnedSlice<u8, D>>, (UdpPacketError, Self)> {
+        match self.compute_packet_meta() {
+            Err(e) => Err((e, self)),
+            Ok(packet_meta) => {
+                Ok(packet_meta.build_packet_with(OwnedSlice::new(self.buffer, PACKET_DATA_START_BYTE)))
+            }
+        }
     }
+}
+
+#[test]
+fn udp_unrecognized_passthrough() {
+    let received_message: &'static [u8] = b"HELLOWORLD";
+    let received_fragment = UdpPacket::new(received_message);
+    let e = received_fragment.compute_packet().unwrap_err();
+    assert_eq!(e.1.as_bytes(), received_message);
 }
 
 #[test]
@@ -335,7 +347,7 @@ fn udp_fail_not_big_enough() {
     let received_message: &'static [u8] = &[0u8, 0u8, 0u8, 0u8, 1u8, 2u8, 5u8];
     let received_fragment = UdpPacket::new(received_message);
     let e = received_fragment.compute_packet().unwrap_err();
-    assert_eq!(e, UdpPacketError::NotBigEnough);
+    assert_eq!(e.0, UdpPacketError::NotBigEnough);
 }
 
 #[test]
@@ -343,7 +355,7 @@ fn udp_fail_invalid_crc() {
     let received_message: &'static [u8] = &[0; 20];
     let received_udp_message = UdpPacket::new(received_message);
     let e = received_udp_message.compute_packet().unwrap_err();
-    assert_eq!(e, UdpPacketError::InvalidCrc);
+    assert_eq!(e.0, UdpPacketError::InvalidCrc);
 }
 
 #[test]
@@ -368,7 +380,7 @@ fn udp_fail_fragment_invalid_layout() {
     let received_message_bytes: &'static [u8] = &[0xF8, 0xF1, 0xE3, 0x31, 0, 0, 0, 0, 254, 253];
     let udp_message = UdpPacket::new(received_message_bytes);
     let err = udp_message.compute_packet().unwrap_err();
-    assert_eq!(err, UdpPacketError::InvalidFragLayout(254, 253));
+    assert_eq!(err.0, UdpPacketError::InvalidFragLayout(254, 253));
 }
 
 #[test]

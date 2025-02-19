@@ -10,7 +10,7 @@ fn print_values(received: &[u8]) {
     }
 }
 
-fn main() -> Result<(), Box<dyn (::std::error::Error)>> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ip = std::env::args().skip(1).next().unwrap_or(format!("127.0.0.1"));
     println!("Connecting to {}...", ip);
     let mut client = reliudp::RUdpSocket::connect((ip, 61243)).expect("Failed to create client");

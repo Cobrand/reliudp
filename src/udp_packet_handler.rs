@@ -14,6 +14,8 @@ pub (crate) enum ReceivedMessage {
     Heartbeat,
     End(u32),
     Abort(u32),
+    // impossible to decode, so return the raw message
+    Raw(Box<[u8]>),
 }
 
 #[derive(Debug)]
@@ -64,7 +66,10 @@ impl UdpPacketHandler {
                 log::trace!("received Abort({})", last_seq_id);
                 self.out_messages.push_back(ReceivedMessage::Abort(last_seq_id));
             },
-            Err(_) => { /* ignore errors */ }
+            Err((_e, data)) => {
+                // errors are not ignored, but simply transferred as raw packets to the user
+                self.out_messages.push_back(ReceivedMessage::Raw(data.buffer));
+            }
         };
     }
 

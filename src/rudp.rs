@@ -24,6 +24,8 @@ pub enum SocketEvent {
     Ended,
     /// We haven't got any packet coming from the other for a certain amount of time
     Timeout,
+    /// A raw udp packet, not decoded by anything else
+    Raw(Box<[u8]>),
 }
 
 impl ::std::fmt::Debug for SocketEvent {
@@ -34,6 +36,7 @@ impl ::std::fmt::Debug for SocketEvent {
             SocketEvent::Aborted => write!(f, "Aborted"),
             SocketEvent::Ended => write!(f, "Ended"),
             SocketEvent::Timeout => write!(f, "Timeout"),
+            SocketEvent::Raw(d) => write!(f, "Raw({:?} bytes)", d.len()),
         }
     }
 }
@@ -488,6 +491,10 @@ impl RUdpSocket {
                     let _r = self.send_synack();
                     /* do nothing for special now, but we may want to handle "syn" later to
                     have a 'reconnect' feature or something? */
+                },
+                Some(ReceivedMessage::Raw(data)) => {
+                    log::trace!("received raw packet {:?} from remote {}", data, self.socket.remote_addr);
+                    return Some(SocketEvent::Raw(data));
                 }
             };
         };
